@@ -1,0 +1,16 @@
+# UUID                                	Group Name
+#
+global:Anonymous-Users                	Anonymous Users
+global:Registered-Users               	Registered Users
+teamforge:direct_proj_member:proj10252	TF: Direct Project Member of proj10252 (openbmc)
+teamforge:non-restricted_users        	TF: Non-restricted Users
+teamforge:proj10252:role83221         	TF: openbmc: Administrator
+teamforge:proj10252:role83222         	TF: openbmc: Developer
+teamforge:proj10252:role83223         	TF: openbmc: Maintainer
+teamforge:proj10252:role83224         	TF: openbmc: Read Only
+teamforge:proj10252:role83225         	TF: openbmc: Submitter
+teamforge:proj_member:proj10252       	TF: Project Member of proj10252 (openbmc)
+teamforge:site_wide:admin:gated       	TF: Gated Project - Site Wide Admin Access
+teamforge:site_wide:commit:gated      	TF: Gated Project - Site Wide Commit Access
+teamforge:site_wide:delete:gated      	TF: Gated Project - Site Wide Delete Access
+teamforge:site_wide:view:gated        	TF: Gated Project - Site Wide View Access
