@@ -42,6 +42,7 @@ constexpr uint32_t pfr_pc_type_pch_pfm = 0x01;
 constexpr uint32_t pfr_pc_type_pch_update = 0x02;
 constexpr uint32_t pfr_pc_type_bmc_pfm = 0x03;
 constexpr uint32_t pfr_pc_type_bmc_update = 0x04;
+constexpr uint32_t pfr_pc_type_seamless_update = 0x05;
 constexpr uint32_t pfr_pc_type_cancel_cert = 0x100;
 
 constexpr uint32_t key_non_cancellable = static_cast<uint32_t>(-1);

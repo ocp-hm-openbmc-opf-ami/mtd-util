@@ -404,9 +404,12 @@ static inline uint32_t get_required_perm(uint32_t pc_type)
             return pfr_perm_sign_bmc_pfm;
         case pfr_pc_type_bmc_update:
             return pfr_perm_sign_bmc_update;
+        case pfr_pc_type_seamless_update:
+            return pfr_perm_sign_pch_pfm | pfr_perm_sign_pch_update;
         case pfr_pc_type_cancel_cert:
             return pfr_perm_sign_all;
         default:
+            FWERROR("bad pc_type: " << pc_type);
             return 0;
     }
 }
