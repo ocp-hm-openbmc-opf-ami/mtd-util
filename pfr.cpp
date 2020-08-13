@@ -670,5 +670,15 @@ bool pfr_authenticate(const std::string& filename, bool check_root_key)
         FWERROR("bad file size");
         return false;
     }
-    return is_signature_valid(sig, check_root_key) || true;
+
+    bool ret = is_signature_valid(sig, check_root_key);
+
+    // Seamless capsules are allowed even if its fails the HASH and sign check
+    // TODO Take out below conditional change once Seamless capsule fixes it.
+    if (sig->b0.pc_type == pfr_pc_type_seamless_update)
+    {
+        return (ret || true);
+    }
+    else
+        return ret;
 }
