@@ -40,6 +40,69 @@ static unsigned int image_offset(const void* thing)
 }
 
 /**
+ * @brief Class to handle non-consecutive hashing
+ */
+class Hash
+{
+  public:
+    Hash(const EVP_MD* dgst, const cbspan& expected) :
+        ctx{}, hash(EVP_MAX_MD_SIZE), expected(expected)
+    {
+        ctx = EVP_MD_CTX_new();
+        if (!ctx)
+        {
+            throw std::bad_alloc();
+        }
+        EVP_MD_CTX_init(ctx);
+        EVP_DigestInit_ex(ctx, dgst, nullptr);
+    }
+    ~Hash()
+    {
+        EVP_MD_CTX_free(ctx);
+    }
+    void update(const uint8_t* data, size_t len)
+    {
+        if (finalized)
+        {
+            throw std::logic_error("update after finalize");
+        }
+        EVP_DigestUpdate(ctx, data, len);
+    }
+    const std::vector<uint8_t>& digest() const
+    {
+        if (finalized)
+        {
+            return hash;
+        }
+        finalized = true;
+        unsigned int len = hash.size();
+        EVP_DigestFinal_ex(ctx, hash.data(), &len);
+        hash.resize(len);
+        return hash;
+    }
+    bool verify() const
+    {
+        digest();
+        bool match = std::equal(hash.cbegin(), hash.cend(), expected.cbegin(),
+                                expected.cend());
+        if (!match)
+        {
+            auto expected_ = &expected[0];
+            auto computed = &hash[0];
+            DUMP(PRINT_ERROR, expected_, expected.size());
+            DUMP(PRINT_ERROR, computed, hash.size());
+        }
+        return match;
+    }
+
+  private:
+    mutable bool finalized = false;
+    EVP_MD_CTX* ctx;
+    mutable std::vector<uint8_t> hash;
+    const cbspan expected;
+};
+
+/**
  * @brief This function hashes data with SHA256
  *
  * @param data pointer to the start address of data to hash
@@ -237,25 +300,30 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
             return false;
         }
     }
-    else if ((pc_type == pfr_pc_type_pch_pfm) ||
-             (pc_type == pfr_pc_type_pch_update))
+    else if (pc_type == pfr_pc_type_pch_update)
     {
-        // For PFM, there's no max size, but it should be smaller than a capsule
-        // size for sure.
         if (b0->pc_length > pfr_pch_max_size)
         {
             FWERROR("pch image too big");
             return false;
         }
     }
-    else if ((pc_type == pfr_pc_type_bmc_pfm) ||
-             (pc_type == pfr_pc_type_bmc_update))
+    else if (pc_type == pfr_pc_type_bmc_update)
     {
         // For PFM, there's no max size, but it should be smaller than a capsule
         // size for sure.
         if (b0->pc_length > pfr_bmc_max_size)
         {
             FWERROR("bmc image too big");
+            return false;
+        }
+    }
+    else if ((pc_type == pfr_pc_type_pch_pfm) ||
+             (pc_type == pfr_pc_type_bmc_pfm))
+    {
+        if (b0->pc_length > pfr_pfm_max_size)
+        {
+            FWERROR("pfm/fvm image too big");
             return false;
         }
     }
@@ -271,8 +339,9 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
         }
     }
 
-    // Verify Hash256 of PC
-    return verify_sha256(b0->sha256, protected_content, b0->pc_length);
+    // Verify Hash256 and Hash384 of PC
+    return verify_sha256(b0->sha256, protected_content, b0->pc_length) &&
+           verify_sha384(b0->sha384, protected_content, b0->pc_length);
 }
 
 /**
@@ -657,6 +726,204 @@ static bool is_signature_valid(const b0b1_signature* sig, bool check_root_key)
     return false;
 }
 
+static bool seamless_fvm_authenticate(const b0b1_signature* img_sig)
+{
+    // sig (full image signature) has already been authenticated; immediately
+    // following should be the fvm signature, which should not be incorrect,
+    // but it is authenticated as follows:
+    const b0b1_signature* sig = img_sig + 1;
+    const blk0* b0 = &sig->b0;
+    const blk1* b1 = &sig->b1;
+    const uint8_t* pc = reinterpret_cast<const uint8_t*>(sig + 1);
+
+    if (!is_block0_valid(b0, pc))
+    {
+        FWERROR("block0 failed authentication");
+        return false;
+    }
+    // Validate block1 (contains the signature chain used to sign block0)
+    if (!is_block1_valid(b0, b1, false, false))
+    {
+        FWERROR("block1 failed authentication");
+        return false;
+    }
+    auto map_base = reinterpret_cast<const uint8_t*>(img_sig);
+    auto offset = reinterpret_cast<const uint8_t*>(img_sig);
+    offset += blk0blk1_size * 2; // one blk0blk1 for package, one for fvm
+    auto fvm_hdr = reinterpret_cast<const fvm*>(offset);
+    FWDEBUG("fvm header at " << std::hex << fvm_hdr
+                             << " (magic:" << fvm_hdr->magic << ")");
+    FWDEBUG("fvm length is 0x" << std::hex << fvm_hdr->length);
+    size_t fvm_size = block_round(fvm_hdr->length, fvm_block_size);
+    offset += sizeof(*fvm_hdr);
+    auto fvm_end = reinterpret_cast<const uint8_t*>(fvm_hdr) + fvm_size;
+
+    // loop through until we find fvm address structs
+    DUMP(PRINT_DEBUG, fvm_hdr, sizeof(*fvm_hdr) + (fvm_end - offset));
+    DUMP(PRINT_DEBUG, offset, 2 * SHA256_DIGEST_LENGTH);
+    auto pbc_hdr = reinterpret_cast<const pbc*>(fvm_end);
+    auto payload = reinterpret_cast<const uint8_t*>(pbc_hdr + 1);
+    auto act_map = reinterpret_cast<const uint8_t*>(payload);
+    FWDEBUG("active map at 0x" << std::hex
+                               << (reinterpret_cast<unsigned long>(act_map) -
+                                   reinterpret_cast<unsigned long>(map_base)));
+    payload += pbc_hdr->bitmap_size / 8;
+    auto pbc_map = reinterpret_cast<const uint8_t*>(payload);
+    FWDEBUG("pbc map at 0x" << std::hex
+                            << (reinterpret_cast<unsigned long>(pbc_map) -
+                                reinterpret_cast<unsigned long>(map_base)));
+    FWDEBUG("payload starts at "
+            << std::hex
+            << (reinterpret_cast<unsigned long>(payload) -
+                reinterpret_cast<unsigned long>(map_base)));
+    payload += pbc_hdr->bitmap_size / 8;
+    while (offset < fvm_end)
+    {
+        FWDEBUG("offset: " << std::hex << (const void*)offset << " < "
+                           << (const void*)fvm_end);
+        // first byte of struct is type
+        if (*offset == type_spi_region)
+        {
+            FWINFO("parse FVM: spi_region");
+            auto info = reinterpret_cast<const spi_region*>(offset);
+            offset += sizeof(*info);
+            std::unique_ptr<Hash> hash256 = nullptr;
+            std::unique_ptr<Hash> hash384 = nullptr;
+            // size of spi region depends on hashes present
+            if (info->hash_info & sha256_present)
+            {
+                FWINFO("           spi_region + sha256");
+                hash256 = std::make_unique<Hash>(EVP_sha256(),
+                                                 cbspan(offset, sha256_size));
+                offset += sha256_size;
+            }
+            if (info->hash_info & sha384_present)
+            {
+                FWINFO("           spi_region + sha384 (" << sha384_size
+                                                          << " bytes)");
+                hash384 = std::make_unique<Hash>(EVP_sha384(),
+                                                 cbspan(offset, sha384_size));
+                offset += sha384_size;
+            }
+            // hash the parts by walking the pbc
+            if (pbc_hdr->magic != pbc_magic)
+            {
+                FWERROR("pbc magic incorrect: " << std::hex << pbc_hdr->magic
+                                                << " != " << pbc_magic);
+                return false;
+            }
+            uint8_t ffs[pbc_hdr->page_size];
+            std::fill_n(ffs, pbc_hdr->page_size, 0xff);
+            for (size_t pg = info->start / pbc_hdr->page_size;
+                 pg < info->end / pbc_hdr->page_size; pg++)
+            {
+                const uint8_t* data;
+                FWDEBUG("er: " << std::hex << (int)act_map[pg / 8]
+                               << ", cp: " << (int)pbc_map[pg / 8]);
+                bool erase = (act_map[pg / 8] >> (7 - pg % 8)) & 1;
+                bool copy = (pbc_map[pg / 8] >> (7 - pg % 8)) & 1;
+                if (copy)
+                {
+                    data = payload;
+                    FWDEBUG("data page " << pg << " at " << std::hex
+                                         << (payload - map_base));
+                    payload += pbc_hdr->page_size;
+                }
+                else if (erase)
+                {
+                    FWDEBUG("empty page at " << pg);
+                    data = ffs;
+                }
+                else
+                {
+                    data = nullptr;
+                }
+                if (data)
+                {
+                    if (hash256)
+                    {
+                        hash256->update(data, pbc_hdr->page_size);
+                    }
+                    if (hash384)
+                    {
+                        hash384->update(data, pbc_hdr->page_size);
+                    }
+                }
+            }
+            if (hash256)
+            {
+                if (hash256->verify())
+                {
+                    FWINFO("FVM SHA-256 verify ok");
+                }
+                else
+                {
+                    FWERROR("FVM SHA-256 verify failed");
+                    return false;
+                }
+            }
+            if (hash384)
+            {
+                if (hash384->verify())
+                {
+                    FWINFO("FVM SHA-384 verify ok");
+                }
+                else
+                {
+                    FWERROR("FVM SHA-384 verify failed");
+                    return false;
+                }
+            }
+        }
+        else if (*offset == type_smbus_rule)
+        {
+            FWINFO("parse FVM: smbus_rule");
+            auto info = reinterpret_cast<const smbus_rule*>(offset);
+            offset += sizeof(*info);
+        }
+        else if (*offset == type_fvm_address)
+        {
+            FWINFO("parse FVM: fvm_address");
+            auto info = reinterpret_cast<const fvm_address*>(offset);
+            offset += sizeof(*info);
+        }
+        else if (*offset == type_fvm_capabilities)
+        {
+            FWINFO("parse FVM: fvm_capabilities");
+            auto info = reinterpret_cast<const fvm_capabilities*>(offset);
+            FWINFO("           fvm_capabilities: pkg version: "
+                   << static_cast<int>(info->version.major) << "."
+                   << static_cast<int>(info->version.minor) << "."
+                   << static_cast<int>(info->version.release) << "+"
+                   << static_cast<int>(info->version.hotfix));
+            offset += sizeof(*info);
+        }
+        else if (*offset == 0)
+        {
+            // check padding to end
+            FWDEBUG("parse FVM: padding");
+            while (offset < fvm_end)
+            {
+                if (*offset != 0)
+                {
+                    FWERROR("Invalid non-zero padding at "
+                            << std::hex << (offset - map_base));
+                    return false;
+                }
+                offset++;
+            }
+        }
+        else
+        {
+            FWERROR("parse FVM: unexpected bytes at offset 0x"
+                    << std::hex << (offset - map_base));
+            DUMP(PRINT_ERROR, offset, SHA256_DIGEST_LENGTH);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool pfr_authenticate(const std::string& filename, bool check_root_key)
 {
     boost::iostreams::mapped_file file(filename,
@@ -671,5 +938,16 @@ bool pfr_authenticate(const std::string& filename, bool check_root_key)
         return false;
     }
 
-    return is_signature_valid(sig, check_root_key);
+    if (!is_signature_valid(sig, check_root_key))
+    {
+        return false;
+    }
+    // seamless images should have the FVM signature checked as well
+    if (sig->b0.pc_type == pfr_pc_type_seamless_update)
+    {
+        // check PFM for FVMs to authenticate
+        return seamless_fvm_authenticate(sig);
+    }
+    // non-seamless packages only need the outside signature checked
+    return true;
 }
