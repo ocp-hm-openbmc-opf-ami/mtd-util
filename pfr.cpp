@@ -103,21 +103,6 @@ class Hash
 };
 
 /**
- * @brief This function hashes data with SHA256
- *
- * @param data pointer to the start address of data to hash
- * @param len length of data to hash
- * @param buffer to store output digest
- *
- * @return void
- */
-static void hash_sha256(const uint8_t* data, size_t len, uint8_t* digest)
-{
-    unsigned int digest_sz = SHA256_DIGEST_LENGTH;
-    EVP_Digest(data, len, digest, &digest_sz, EVP_sha256(), nullptr);
-}
-
-/**
  * @brief This function hashes data with SHA384
  *
  * @param data pointer to the start address of data to hash
@@ -130,30 +115,6 @@ static void hash_sha384(const uint8_t* data, size_t len, uint8_t* digest)
 {
     unsigned int digest_sz = SHA384_DIGEST_LENGTH;
     EVP_Digest(data, len, digest, &digest_sz, EVP_sha384(), nullptr);
-}
-
-/**
- * @brief This function hashes data and compares to an expected hash
- *
- * @param expected pointer to the sha256 hash
- * @param data pointer to the start address of data to hash
- * @param len length of data to hash
- *
- * @return true if this data hashes to expected; false, otherwise
- */
-static bool verify_sha256(const uint8_t* expected, const uint8_t* data,
-                          size_t len)
-{
-    uint8_t digest[SHA256_DIGEST_LENGTH];
-    hash_sha256(data, len, digest);
-    bool match = std::equal(expected, expected + SHA256_DIGEST_LENGTH, digest,
-                            digest + SHA256_DIGEST_LENGTH);
-    if (!match)
-    {
-        DUMP(PRINT_ERROR, expected, SHA256_DIGEST_LENGTH);
-        DUMP(PRINT_ERROR, digest, SHA256_DIGEST_LENGTH);
-    }
-    return match;
 }
 
 /**
@@ -206,10 +167,8 @@ static bool verify_ecdsa_and_sha(const uint8_t* key_x, const uint8_t* key_y,
     {
         case curve_secp256r1:
         {
-            constexpr size_t secp256r1_keybits = 256;
-            keybits = secp256r1_keybits;
-            key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
-            hash_sha256(data, len, digest);
+            FWERROR("ecdsa-256 + sha256 not supported");
+            return false;
             break;
         }
         case curve_secp384r1:
@@ -259,6 +218,29 @@ static bool verify_ecdsa_and_sha(const uint8_t* key_x, const uint8_t* key_y,
         return false;
     }
     return true;
+}
+
+/**
+ * @brief This function verifies that a block matches a value
+ *
+ * @param data pointer to data to check
+ * @param len size of data to check
+ * @param val value to compare with data
+ *
+ * @ return true if len bytes of data match val; false otherwise
+ */
+static bool mem_check(const uint8_t* data, size_t len, uint8_t val)
+{
+    if (!data || !len)
+    {
+        return false;
+    }
+    bool has_mismatch = false;
+    for (size_t ind = 0; ind < len; ind++)
+    {
+        has_mismatch |= (data[ind] ^ val);
+    }
+    return !has_mismatch;
 }
 
 /**
@@ -348,9 +330,14 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
         }
     }
 
-    // Verify Hash256 and Hash384 of PC
-    return verify_sha256(b0->sha256, protected_content, b0->pc_length) &&
-           verify_sha384(b0->sha384, protected_content, b0->pc_length);
+    // Verify Hash256 is 0xff and Hash384 matches PC
+    if (!mem_check(b0->sha256, b0->pc_length, 0xff))
+    {
+        FWWARN("sha256 signature is not empty");
+        // do not enforce until images are generated correctly
+    }
+    // require the sha384 signature to be correct
+    return verify_sha384(b0->sha384, protected_content, b0->pc_length);
 }
 
 /**
@@ -805,10 +792,13 @@ static bool seamless_fvm_authenticate(const b0b1_signature* img_sig)
             // size of spi region depends on hashes present
             if (info->hash_info & sha256_present)
             {
-                FWINFO("           spi_region + sha256");
-                hash256 = std::make_unique<Hash>(EVP_sha256(),
-                                                 cbspan(offset, sha256_size));
-                offset += sha256_size;
+                FWINFO("           spi_region + sha256 not supported");
+                // For now, allow images that are dual hashed to pass
+                // but reject images that are only sha256 hashed
+                if (!(info->hash_info & sha384_present))
+                {
+                    return false;
+                }
             }
             if (info->hash_info & sha384_present)
             {
