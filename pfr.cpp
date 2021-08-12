@@ -32,6 +32,8 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
+#include <fstream>
+
 static const void* base_addr = NULL;
 static unsigned int image_offset(const void* thing)
 {
@@ -726,6 +728,24 @@ static bool is_signature_valid(const b0b1_signature* sig, bool check_root_key)
     return false;
 }
 
+static uint32_t read_saved_layout(void)
+{
+    static constexpr const char layout_file[] =
+        "/var/sofs/factory-settings/layout/fitc";
+    uint32_t layout = 0;
+    try
+    {
+        std::ifstream file(layout_file);
+        file >> layout;
+    }
+    catch (const std::exception& e)
+    {
+        // ignore errors, defaulting to zero,
+        // which is the default layout anyway
+    }
+    return layout;
+}
+
 static bool seamless_fvm_authenticate(const b0b1_signature* img_sig)
 {
     // sig (full image signature) has already been authenticated; immediately
@@ -892,13 +912,22 @@ static bool seamless_fvm_authenticate(const b0b1_signature* img_sig)
         }
         else if (*offset == type_fvm_capabilities)
         {
-            FWINFO("parse FVM: fvm_capabilities");
             auto info = reinterpret_cast<const fvm_capabilities*>(offset);
-            FWINFO("           fvm_capabilities: pkg version: "
+            FWINFO("parse FVM: fvm_capabilities\n"
+                   << "    pkg version: "
                    << static_cast<int>(info->version.major) << "."
                    << static_cast<int>(info->version.minor) << "."
                    << static_cast<int>(info->version.release) << "+"
-                   << static_cast<int>(info->version.hotfix));
+                   << static_cast<int>(info->version.hotfix) << '\n'
+                   << "    layout ID: " << std::hex << info->layout);
+            // check that the saved layout matches the incoming layout
+            uint32_t layout = read_saved_layout();
+            if (layout != info->layout)
+            {
+                FWERROR("Layout ID does not match: saved="
+                        << layout << ", image=" << info->layout);
+                return false;
+            }
             offset += sizeof(*info);
         }
         else if (*offset == 0)
