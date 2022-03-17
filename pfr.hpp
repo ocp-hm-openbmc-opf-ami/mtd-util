@@ -561,10 +561,11 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                 // 64K erase.
                 // TODO: Fix 4K erase issue and fix the below logic to do
                 // incremental 4K erases.
-                FWDEBUG("erase(" << std::hex << erase_end_addr + dev_offset
-                                 << ", " << pfr_blk_size * 16 << ")");
+                FWDEBUG("erase(" << std::hex
+                                 << (erase_end_addr + 1) + dev_offset << ", "
+                                 << pfr_blk_size * 16 << ")");
 
-                dev.erase(erase_end_addr + dev_offset, pfr_blk_size * 16);
+                dev.erase((erase_end_addr + 1) + dev_offset, pfr_blk_size * 16);
                 erase_end_addr += pfr_blk_size * 16;
                 FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
             }
