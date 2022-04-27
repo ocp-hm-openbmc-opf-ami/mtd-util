@@ -229,14 +229,19 @@ constexpr size_t pfm_block_size = 128;
 constexpr size_t pfm_hdr_size = 32;
 constexpr size_t CPLD_addr_ref_hdr_size = 12;
 
+union pfm_reserved
+{
+    uint32_t rsvd;
+    uint16_t platform_type;
+};
+
 struct pfm
 {
     uint32_t magic;
     uint8_t svn;
     uint8_t bkc;
     uint16_t pfm_revision;
-    uint16_t platform_type;
-    uint16_t rsvd;
+    pfm_reserved plt;
     uint8_t oem_data[16];
     uint32_t length;
     // pfm_data

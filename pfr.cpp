@@ -789,7 +789,7 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
         return false;
     }
 
-    if (pfm_str->platform_type != prod_id)
+    if (pfm_str->plt.platform_type != prod_id)
     {
         FWERROR("product id not valid");
         return false;
