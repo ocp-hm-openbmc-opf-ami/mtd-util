@@ -391,7 +391,7 @@ int main(int argc, char* argv[])
             {
                 std::cerr << "failed to parse '" << argv[optind]
                           << "' as integer" << std::endl;
-                delete buf;
+                delete[] buf;
                 return 1;
             }
             optind++;
@@ -473,7 +473,7 @@ int main(int argc, char* argv[])
                 break;
             case ACTION_WRITE_TO_FLASH:
                 ret = buf_to_flash(dev, buf, start, len);
-                delete buf;
+                delete[] buf;
                 break;
 #endif /* DEVELOPER_OPTIONS */
             case ACTION_CP_TO_FILE:
