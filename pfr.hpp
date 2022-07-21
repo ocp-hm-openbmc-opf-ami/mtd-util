@@ -540,15 +540,52 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
         {
             if (er_count == 1)
             {
-                FWDEBUG("block " << std::hex << pfr_blk_size * blk
-                                 << " has erase size 1; erasing 64k");
-                er_count = 16;
+                std::vector<uint8_t> buffer(BIG_BLOCK_SIZE);
+                uint32_t fillSize = er_count * pfr_blk_size;
+                erase_end_addr = (pfr_blk_size * (blk + 16)) - 1;
+                dev.read(pfr_blk_size * blk + dev_offset, buffer);
+                dev.erase(pfr_blk_size * blk + dev_offset, BIG_BLOCK_SIZE);
+                // fill 0xff
+                std::fill_n(buffer.begin(), fillSize, 0xff);
+                dev.write(pfr_blk_size * blk + dev_offset, buffer);
+                FWDEBUG("block 0x"
+                        << std::hex << pfr_blk_size * blk << " dev_erase(0x"
+                        << pfr_blk_size * blk + dev_offset << ", "
+                        << BIG_BLOCK_SIZE << ") has erase size 1; fillSize="
+                        << fillSize << " erase_end_addr=" << erase_end_addr);
             }
-            FWDEBUG("erase(" << std::hex << pfr_blk_size * blk << ", "
-                             << pfr_blk_size * er_count + dev_offset << ")");
-            dev.erase(pfr_blk_size * blk + dev_offset, pfr_blk_size * er_count);
-            erase_end_addr = (pfr_blk_size * (blk + er_count)) - 1;
-            FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+            else
+            {
+                FWDEBUG("page: 0x" << std::hex << blk << " er_count: 0x"
+                                   << er_count << " dev_offset: 0x"
+                                   << dev_offset);
+                FWDEBUG("dev_erase(0x"
+                        << std::hex << pfr_blk_size * blk + dev_offset << ", "
+                        << pfr_blk_size * er_count << ")");
+                dev.erase(pfr_blk_size * blk + dev_offset,
+                          pfr_blk_size * er_count);
+                erase_end_addr = (pfr_blk_size * (blk + er_count)) - 1;
+                FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+            }
+        }
+        else
+        {
+            // read, erase, then write-back
+            uint32_t alignedAddr = (blk * pfr_blk_size) & ~BIG_BLOCK_MASK;
+            uint32_t fillSize = er_count * pfr_blk_size;
+            if (er_count == 16)
+            {
+                fillSize =
+                    BIG_BLOCK_SIZE - ((blk * pfr_blk_size) - alignedAddr);
+            }
+            erase_end_addr = alignedAddr + BIG_BLOCK_SIZE - 1;
+            std::vector<uint8_t> buffer(BIG_BLOCK_SIZE);
+            dev.read(alignedAddr, buffer);
+            dev.erase(alignedAddr, BIG_BLOCK_SIZE);
+            // fill 0xff
+            std::fill_n(buffer.begin() + ((blk * pfr_blk_size) - alignedAddr),
+                        fillSize, 0xff);
+            dev.write(alignedAddr, buffer);
         }
 
         if (copy)
