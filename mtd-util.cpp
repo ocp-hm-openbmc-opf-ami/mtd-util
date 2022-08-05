@@ -167,6 +167,54 @@ int dump_flash(mtd<deviceClassT>& dev, size_t start, size_t len)
     return ret;
 }
 
+template <typename deviceClassT>
+int read_write(mtd<deviceClassT>& dev, size_t start_read, size_t start_write, size_t size)
+{
+    int ret =0;
+    if (((start_read+size) > dev.size()))
+    {
+        std::cerr << "access beyond end of flash (" << std::hex << start_read
+                  << " > " << dev.size() << ")" << std::endl;
+        return 3;
+    }
+    if (((start_write+size) > dev.size()))
+    {
+        std::cerr << "access beyond end of flash (" << std::hex << start_write
+                  << " > " << dev.size() << ")" << std::endl;
+        return 3;
+    }
+    std::vector<uint8_t> mbuf(size);
+    dev.read(start_read, mbuf);
+    dev.erase(start_read, size);
+    dev.write(start_write,mbuf);
+    return ret;
+}
+
+template <typename deviceClassT>
+int primary_secondary(mtd<deviceClassT>& dev)
+{
+    int ret =0;
+    if (!read_write(dev, 0, SECONDARY_IMAGE_OFFSET, U_BOOT_ENV))
+    {
+        std::cout<<"Successful to read and write from Primary to Secondary till pfm";
+    }
+    else
+    {
+        std::cout<<"Failed to read and write from Primary to Secondary till pfm";
+        return 3;
+    }
+    if (!read_write(dev, PRIMARY_FIT_IMAGE_START_ADDR, SECONDARY_IMAGE_OFFSET, FIT_IMAGE_SIZE))
+    {
+        std::cout<<"Successful to read and write from Primary to Secondary for Fit image";
+    }
+    else
+    {
+        std::cout<<"Failed to read and write from Primary to Secondary for Fit image";
+        return 3;
+    }
+    return ret;
+}
+
 std::string locate_active_device()
 {
     // TODO: lookup the real device.
@@ -190,6 +238,7 @@ typedef enum
     ACTION_PFR_AUTH,
     ACTION_PFR_STAGE,
     ACTION_PFR_WRITE,
+    ACTION_PRIMARY_SECONDARY,
     ACTION_MAX,
 } ACTION;
 
@@ -398,6 +447,10 @@ int main(int argc, char* argv[])
         }
     }
 #endif /* DEVELOPER_OPTIONS */
+    else if (argv[optind][0] == 'z')
+    {
+        action = ACTION_PRIMARY_SECONDARY;
+    }
     else if (argv[optind][0] == 'd')
     {
         action = ACTION_DUMP;
@@ -490,6 +543,9 @@ int main(int argc, char* argv[])
                 break;
             case ACTION_PFR_WRITE:
                 ret = !pfr_write(dev, filename, start, recovery_reset);
+                break;
+            case ACTION_PRIMARY_SECONDARY:
+                ret = !primary_secondary(dev);
                 break;
             default:
                 usage();

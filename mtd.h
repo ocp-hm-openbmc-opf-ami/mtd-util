@@ -40,6 +40,11 @@
 #define BIG_BLOCK_MASK (BIG_BLOCK_SIZE - 1)
 #define SMALL_BLOCK_MASK (SMALL_BLOCK_SIZE - 1)
 
+#define SECONDARY_IMAGE_OFFSET 0x04000000
+#define PRIMARY_FIT_IMAGE_START_ADDR 0x00B00000
+#define FIT_IMAGE_SIZE 0x1F00000
+#define U_BOOT_ENV 0x00A0000
+
 static constexpr bool mtd_use_4k_sectors = false;
 
 class hw_mtd
