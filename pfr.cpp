@@ -620,18 +620,18 @@ static bool is_block0_sig_entry_valid(uint32_t curve, const uint8_t* root_key_x,
  *
  * @return bool true if this Block 1 is valid; false, otherwise
  */
-static bool is_block1_valid(const blk0* b0, const blk1* b1,
+static bool is_block1_valid(const blk0* b0, const sig_blk1* sig,
                             bool is_key_cancellation_cert, bool check_root_key)
 {
     // Verify magic number
-    if (b1->magic != blk1_magic)
+    if (sig->b1.magic != blk1_magic)
     {
         FWERROR("b1 magic invalid");
         return false;
     }
 
     // Validate Block1 Root Entry
-    const key_entry* root_entry = &b1->root_key;
+    const key_entry* root_entry = &sig->b1.root_key;
     if (!is_root_entry_valid(root_entry, check_root_key))
     {
         FWERROR("root_entry invalid");
@@ -642,7 +642,7 @@ static bool is_block1_valid(const blk0* b0, const blk1* b1,
     {
         // In the signature of the Key Cancellation Certificate, there's no CSK
         // entry
-        const block0_sig_entry* b0_entry = &b1->block0_sig;
+        const block0_sig_entry* b0_entry = &sig->cncl_b1.block0_sig;
 
         // Validate Block 0 Entry in Block 1
         return is_block0_sig_entry_valid(root_entry->curve, root_entry->key_x,
@@ -650,7 +650,7 @@ static bool is_block1_valid(const blk0* b0, const blk1* b1,
     }
 
     // Validate Block1 CSK Entry
-    const csk_entry* csk = &b1->csk;
+    const csk_entry* csk = &sig->b1.csk;
     if (!is_csk_entry_valid(root_entry, csk, b0->pc_type))
     {
         FWERROR("csk_entry invalid");
@@ -658,7 +658,7 @@ static bool is_block1_valid(const blk0* b0, const blk1* b1,
     }
 
     // Validate Block 0 Entry in Block 1
-    const block0_sig_entry* block0_sig = &b1->block0_sig;
+    const block0_sig_entry* block0_sig = &sig->b1.block0_sig;
     if (is_block0_sig_entry_valid(root_entry->curve, csk->key.key_x,
                                   csk->key.key_y, block0_sig, b0))
     {
@@ -678,23 +678,21 @@ static bool is_block1_valid(const blk0* b0, const blk1* b1,
  * @return uint32_t 1 if this key cancellation certificate is valid; 0,
  * otherwise
  */
-static uint32_t is_key_can_cert_valid(const cancel_cert* cert)
+static uint32_t is_key_can_cert_valid(const cancel_payload* cert)
 {
     // Check for the 0s in the reserved field
     // This reduces the degree of freedom for attackers
-    const uint32_t* key_can_cert_reserved = cert->rsvd;
-    for (uint32_t word_i = 0; word_i < cancel_pad_size / 4; word_i++)
+    const uint32_t* key_can_cert_reserved = cert->padding;
+    for (uint32_t word_i = 0; word_i < cancel_payload_pad_size; word_i++)
     {
         if (key_can_cert_reserved[word_i] != 0)
         {
             return 0;
         }
     }
-    const cancel_payload* cancel =
-        reinterpret_cast<const cancel_payload*>(cert + 1);
 
     // If the key ID is within 0-127 (inclusive), return 1
-    return cancel->csk_id <= pfr_max_key_id;
+    return cert->csk_id <= pfr_max_key_id;
 }
 
 /**
@@ -713,11 +711,11 @@ static uint32_t is_key_can_cert_valid(const cancel_cert* cert)
 static bool is_signature_valid(const b0b1_signature* sig, bool check_root_key)
 {
     const blk0* b0 = &sig->b0;
-    const blk1* b1 = &sig->b1;
     bool is_key_cancellation_cert = b0->pc_type & pfr_pc_type_cancel_cert;
 
     // Get pointer to protected content
     const uint8_t* pc = reinterpret_cast<const uint8_t*>(sig + 1);
+
     if (is_key_cancellation_cert)
     {
         // Check the size of the cancellation certificate
@@ -727,7 +725,7 @@ static bool is_signature_valid(const b0b1_signature* sig, bool check_root_key)
         }
 
         // Validate the cancellation certificate content
-        if (!is_key_can_cert_valid(reinterpret_cast<const cancel_cert*>(pc)))
+        if (!is_key_can_cert_valid(reinterpret_cast<const cancel_payload*>(pc)))
         {
             FWERROR("cancel cert invalid");
             return false;
@@ -738,7 +736,8 @@ static bool is_signature_valid(const b0b1_signature* sig, bool check_root_key)
     if (is_block0_valid(b0, pc))
     {
         // Validate block1 (contains the signature chain used to sign block0)
-        if (is_block1_valid(b0, b1, is_key_cancellation_cert, check_root_key))
+        if (is_block1_valid(b0, &sig->b1_sig, is_key_cancellation_cert,
+                            check_root_key))
         {
             return true;
         }
@@ -938,7 +937,7 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
     // but it is authenticated as follows:
     const b0b1_signature* sig = img_sig + 1;
     const blk0* b0 = &sig->b0;
-    const blk1* b1 = &sig->b1;
+    const blk1* b1 = &sig->b1_sig.b1;
     const uint8_t* pc = reinterpret_cast<const uint8_t*>(sig + 1);
 
     if (!is_block0_valid(b0, pc))
@@ -947,7 +946,7 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
         return false;
     }
     // Validate block1 (contains the signature chain used to sign block0)
-    if (!is_block1_valid(b0, b1, false, false))
+    if (!is_block1_valid(b0, &sig->b1_sig, false, false))
     {
         FWERROR("block1 failed authentication");
         return false;

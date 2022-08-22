@@ -67,7 +67,7 @@ constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;    // 24 MB
 constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;    // 32 MB
 constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024;// 32 MB
 constexpr size_t pfr_afm_max_size = 128 * 1024;          // 128KB
-constexpr size_t pfr_cancel_cert_size = 8;
+constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 // TODO: confirm the image size before merging the patch
 constexpr size_t pfr_combined_cpld_max_size = 1 * 1024 * 1024; // 1 MB
@@ -186,14 +186,6 @@ struct blk1
     uint32_t rsvd[blk1_pad_size];
 } __attribute__((packed));
 
-struct b0b1_signature
-{
-    blk0 b0;
-    blk1 b1;
-} __attribute__((packed));
-static_assert(sizeof(b0b1_signature) == 1024,
-              "block0 + block1 size is not 1024 bytes");
-
 constexpr size_t cancel_pad_size = 9;
 struct cancel_cert
 {
@@ -207,11 +199,12 @@ struct cancel_cert
 
 constexpr size_t cancel_sig_pad_size =
     (blk0blk1_size - sizeof(cancel_cert) - sizeof(uint32_t) -
-     sizeof(key_entry) - sizeof(block0_sig_entry)) /
+     (3 * sizeof(uint32_t)) - sizeof(key_entry) - sizeof(block0_sig_entry)) /
     sizeof(uint32_t);
 struct cancel_sig
 {
     uint32_t magic;
+    uint32_t pad[3];
     key_entry root_key;
     block0_sig_entry block0_sig;
     uint32_t rsvd[cancel_sig_pad_size];
@@ -225,6 +218,20 @@ struct cancel_payload
     uint32_t csk_id;
     uint32_t padding[cancel_payload_pad_size];
 } __attribute__((packed));
+
+union sig_blk1
+{
+    blk1 b1;
+    cancel_sig cncl_b1;
+};
+
+struct b0b1_signature
+{
+    blk0 b0;
+    sig_blk1 b1_sig;
+} __attribute__((packed));
+static_assert(sizeof(b0b1_signature) == 1024,
+              "block0 + block1 size is not 1024 bytes");
 
 constexpr uint32_t pfm_magic = 0x02b3ce1d;
 constexpr uint32_t afm_magic = 0x8883ce1d;
