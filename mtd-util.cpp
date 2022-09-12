@@ -190,6 +190,7 @@ typedef enum
     ACTION_PFR_AUTH,
     ACTION_PFR_STAGE,
     ACTION_PFR_WRITE,
+    ACTION_SECURE_BOOT_IMAGE_WRITE,
     ACTION_MAX,
 } ACTION;
 
@@ -207,6 +208,7 @@ void usage(void)
            "       mtd-util [-v] [-d <mtd-device>] d[ump] offset [len]\n"
            "       mtd-util [-v] [-d <mtd-device>] p[fr] a[uthenticate] file\n"
            "       mtd-util [-v] [-d <mtd-device>] p[fr] s[tage] file "
+           "       mtd-util [-v] [-d <mtd-device>] s[ecure_boot] file offset\n"
            "[offset]\n"
            "       mtd-util [-v] [-d <mtd-device>] [-r] p[fr] w[rite] file "
            "[offset]\n"
@@ -449,6 +451,21 @@ int main(int argc, char* argv[])
             start = strtoul(argv[optind], &endptr, 16);
         }
     }
+    else if (argv[optind][0] == 's')
+    {
+        if ((optind + 2) >= argc)
+        {
+            usage();
+        }
+        action =  ACTION_SECURE_BOOT_IMAGE_WRITE;
+        optind++;
+        filename = argv[optind];
+        if ((optind + 1) < argc)
+        {
+            optind++;
+            start = strtoul(argv[optind], &endptr, 16);
+        }
+    }
     else
     {
         usage();
@@ -490,6 +507,9 @@ int main(int argc, char* argv[])
                 break;
             case ACTION_PFR_WRITE:
                 ret = !pfr_write(dev, filename, start, recovery_reset);
+                break;
+            case ACTION_SECURE_BOOT_IMAGE_WRITE:
+                ret = !secure_boot_image_update(dev, filename, start);
                 break;
             default:
                 usage();

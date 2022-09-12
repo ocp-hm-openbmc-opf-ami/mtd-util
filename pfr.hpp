@@ -595,3 +595,197 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
     }
     return true;
 }
+
+template <typename deviceClassT>
+bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filename,
+               size_t dev_offset)
+{
+    if (!pfr_authenticate(filename, true))
+    {
+        return false;
+    }
+    boost::iostreams::mapped_file file(filename,
+                                       boost::iostreams::mapped_file::readonly);
+    auto map_base = reinterpret_cast<const uint8_t*>(file.const_data());
+    auto offset = reinterpret_cast<const uint8_t*>(file.const_data());
+
+    FWDEBUG("file mapped " << file.size() << " bytes at 0x" << std::hex
+                           << reinterpret_cast<unsigned long>(offset));
+
+    // walk the bitmap, erase and copy
+    offset += blk0blk1_size * 2; // one blk0blk1 for package, one for pfm
+    auto pfm_hdr = reinterpret_cast<const pfm*>(offset);
+    FWDEBUG("pfm header at " << std::hex << pfm_hdr
+                             << " (magic:" << pfm_hdr->magic << ")");
+    FWDEBUG("pfm length is 0x" << std::hex << pfm_hdr->length);
+    size_t pfm_size = block_round(pfm_hdr->length, pfm_block_size);
+    cbspan pfm_data(offset - blk0blk1_size, offset + pfm_size);
+    offset += pfm_size;
+    auto pbc_hdr = reinterpret_cast<const pbc*>(offset);
+    FWDEBUG("pbc header at " << std::hex << pbc_hdr
+                             << " (magic:" << pbc_hdr->magic << ")");
+    FWDEBUG("pbc bitmap size 0x" << std::hex << pbc_hdr->bitmap_size);
+    offset += sizeof(pbc);
+    auto act_map = reinterpret_cast<const uint8_t*>(offset);
+    FWDEBUG("active map at 0x" << std::hex
+                               << reinterpret_cast<unsigned long>(act_map));
+    offset += pbc_hdr->bitmap_size / 8;
+    auto pbc_map = reinterpret_cast<const uint8_t*>(offset);
+    FWDEBUG("pbc map at 0x" << std::hex
+                            << reinterpret_cast<unsigned long>(pbc_map));
+
+    // copy the pfm manually (not part of the compression bitmap)
+    constexpr size_t pfm_address = 0x80000;
+    constexpr size_t pfm_region_size = 0x20000;
+    constexpr uint32_t secondary_image_offset = 0x04000000;
+    constexpr uint32_t fit_image_block = 0xb00;
+    constexpr uint32_t blocks_skip = 0xA80;
+    dev.erase(pfm_address + dev_offset, pfm_region_size);
+    dev.write_raw(pfm_address + dev_offset, pfm_data);
+    // set offset to the beginning of the compressed data
+    offset += pbc_hdr->bitmap_size / 8;
+    uint32_t wr_count = 1;
+    uint32_t er_count = 1;
+    uint32_t erase_end_addr = 0;
+    uint32_t write_end_addr = 0;
+    uint32_t blocks_to_skip = 0;
+    for (uint32_t blk = 0; blk < pbc_hdr->bitmap_size; blk += wr_count)
+    {
+        if ((dev_offset == secondary_image_offset) && (blk >= fit_image_block))
+        {
+            blocks_to_skip = blocks_skip;
+        }
+        if ((blk % 8) == 0)
+        {
+            wr_count = 1;
+            er_count = 1;
+            if ((blk + 8) < pbc_hdr->bitmap_size)
+            {
+                uint32_t b8 = blk / 8;
+                // try to do 64k first
+                // 64k erase is fine if all erase bits are set and either
+                // all copy bits or no copy bits are set
+                er_count =
+                    (act_map[b8] == 0xff && act_map[b8 + 1] == 0xff) ? 16 : 1;
+                wr_count = ((pbc_map[b8] == 0xff && pbc_map[b8 + 1] == 0xff) ||
+                            (pbc_map[b8] == 0 && pbc_map[b8 + 1] == 0))
+                               ? 16
+                               : 1;
+            }
+        }
+        bool erase = (act_map[blk / 8] >> (7 - blk % 8)) & 1;
+        bool copy = (pbc_map[blk / 8] >> (7 - blk % 8)) & 1;
+        if (!erase)
+        {
+            continue;
+        }
+        if (!copy)
+        {
+            // skip erase if the block is in an unsigned segment
+            auto region_offset = reinterpret_cast<const uint8_t*>(pfm_hdr + 1);
+            auto region_end = region_offset + pfm_size;
+            bool region_is_unsigned = true;
+            while (region_offset < region_end)
+            {
+                auto region =
+                    reinterpret_cast<const spi_region*>(region_offset);
+                if (region->type == type_spi_region)
+                {
+                    // check if the first block is within this region
+                    if (region->start <= (blk - blocks_to_skip) * pfr_blk_size)
+                    {
+                        // check if the last block is within this region
+                        if ((blk + er_count) * pfr_blk_size <= region->end)
+                        {
+                            region_is_unsigned = (region->hash_info == 0);
+                            break;
+                        }
+                        // check if a single block is within this region
+                        if ((blk + 1) * pfr_blk_size <= region->end)
+                        {
+                            er_count = 1;
+                            region_is_unsigned = (region->hash_info == 0);
+                            break;
+                        }
+                    }
+                    region_offset +=
+                        sizeof(spi_region) +
+                        (region->hash_info & sha256_present ? sha256_size : 0) +
+                        (region->hash_info & sha384_present ? sha384_size : 0);
+                }
+                else if (region->type == type_smbus_rule)
+                {
+                    region_offset += sizeof(smbus_rule);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            if (region_is_unsigned)
+            {
+                FWDEBUG("skipping erase on unsigned block"
+                        << (er_count == 16 ? "s" : "") << " @" << std::hex
+                        << pfr_blk_size * (blk - blocks_to_skip) + dev_offset);
+                continue;
+            }
+        }
+        if (blk % 16 == 0)
+        {
+            if (er_count == 1)
+            {
+                FWDEBUG("block " << std::hex
+                                 << pfr_blk_size * (blk - blocks_to_skip)
+                                 << " has erase size 1; erasing 64k");
+                er_count = 16;
+            }
+            FWDEBUG("erase("
+                    << std::hex
+                    << pfr_blk_size * (blk - blocks_to_skip) + dev_offset
+                    << ", " << pfr_blk_size * er_count << ")");
+
+            dev.erase((pfr_blk_size * (blk - blocks_to_skip)) + dev_offset,
+                      pfr_blk_size * er_count);
+            erase_end_addr =
+                (pfr_blk_size * ((blk - blocks_to_skip) + er_count)) - 1;
+            FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+        }
+
+        if (copy)
+        {
+            cbspan data(offset, offset + pfr_blk_size * wr_count);
+            write_end_addr =
+                (pfr_blk_size * ((blk - blocks_to_skip) + wr_count)) - 1;
+            FWDEBUG("write_end_addr: " << std::hex << write_end_addr);
+
+            // Check if current write address wasn't part of previous 64K sector
+            // erase. and erase it here.
+            if ((write_end_addr > erase_end_addr) ||
+                ((pfr_blk_size * (blk - blocks_to_skip)) > erase_end_addr))
+            {
+                // Currently 4K erases are not working hence making it always
+                // 64K erase.
+                // TODO: Fix 4K erase issue and fix the below logic to do
+                // incremental 4K erases.
+                FWDEBUG("erase(" << std::hex
+                                 << (erase_end_addr + 1) + dev_offset << ", "
+                                 << pfr_blk_size * 16 << ")");
+
+                dev.erase((erase_end_addr + 1) + dev_offset, pfr_blk_size * 16);
+                erase_end_addr += pfr_blk_size * 16;
+                FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+            }
+            // DUMP(PRINT_ERROR, data);
+            FWDEBUG("write("
+                    << std::hex
+                    << pfr_blk_size * (blk - blocks_to_skip) + dev_offset
+                    << ", " << pfr_blk_size * wr_count << "), offset = 0x"
+                    << (offset - map_base));
+            dev.write_raw(pfr_blk_size * (blk - blocks_to_skip) + dev_offset,
+                          data);
+
+            offset += pfr_blk_size * wr_count;
+        }
+    }
+    return true;
+}
