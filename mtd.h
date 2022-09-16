@@ -28,6 +28,8 @@
 #ifndef __CPP_MTD_H__
 #define __CPP_MTD_H__
 
+#include <math.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>

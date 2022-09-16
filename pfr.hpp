@@ -61,12 +61,12 @@ constexpr uint32_t pfr_perm_sign_combined_cpld_update = 0x40;
 constexpr uint32_t pfr_perm_sign_afm_update = 0x20;
 
 constexpr size_t pfr_blk_size = 0x1000;
-constexpr size_t pfr_pfm_max_size = 64 * 1024;           // 64 kB
-constexpr size_t pfr_cpld_update_size = 1 * 1024 * 1024; // 1 MB
-constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;    // 24 MB
-constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;    // 32 MB
-constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024;// 32 MB
-constexpr size_t pfr_afm_max_size = 128 * 1024;          // 128KB
+constexpr size_t pfr_pfm_max_size = 64 * 1024;                // 64 kB
+constexpr size_t pfr_cpld_update_size = 1 * 1024 * 1024;      // 1 MB
+constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;         // 24 MB
+constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;         // 32 MB
+constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024; // 32 MB
+constexpr size_t pfr_afm_max_size = 128 * 1024;               // 128KB
 constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 // TODO: confirm the image size before merging the patch
@@ -597,8 +597,8 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
 }
 
 template <typename deviceClassT>
-bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filename,
-               size_t dev_offset)
+bool secure_boot_image_update(mtd<deviceClassT>& dev,
+                              const std::string& filename, size_t dev_offset)
 {
     if (!pfr_authenticate(filename, true))
     {
@@ -618,6 +618,18 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filenam
     FWDEBUG("pfm header at " << std::hex << pfm_hdr
                              << " (magic:" << pfm_hdr->magic << ")");
     FWDEBUG("pfm length is 0x" << std::hex << pfm_hdr->length);
+    // svn version check with existing env from OTP configuration
+    uint8_t svn_value = pfm_hdr->svn;
+    uint64_t svn_version = pow(2, svn_value);
+    std::cout << "The value of SVN Version is: " << svn_version << std::endl;
+    // TODO: Read the existing EVN from OTP configuration
+    uint64_t expected_svn_version = 0;
+    if (svn_version < expected_svn_version)
+    {
+        std::cerr << "The SVN Version is less than expected SVN Version"
+                  << std::endl;
+        return false;
+    }
     size_t pfm_size = block_round(pfm_hdr->length, pfm_block_size);
     cbspan pfm_data(offset - blk0blk1_size, offset + pfm_size);
     offset += pfm_size;
