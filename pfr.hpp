@@ -620,14 +620,13 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev,
     FWDEBUG("pfm length is 0x" << std::hex << pfm_hdr->length);
     // svn version check with existing env from OTP configuration
     uint8_t svn_value = pfm_hdr->svn;
-    uint64_t svn_version = pow(2, svn_value);
-    std::cout << "The value of SVN Version is: " << svn_version << std::endl;
+    uint64_t svn = pow(2, svn_value);
     // TODO: Read the existing EVN from OTP configuration
-    uint64_t expected_svn_version = 0;
-    if (svn_version < expected_svn_version)
+    uint64_t expected_svn = 0;
+    if (svn < expected_svn)
     {
-        std::cerr << "The SVN Version is less than expected SVN Version"
-                  << std::endl;
+        std::cerr << "The SVN Version: "<< svn <<" is less than expected SVN Version: "
+                  << expected_svn << std::endl;
         return false;
     }
     size_t pfm_size = block_round(pfm_hdr->length, pfm_block_size);
