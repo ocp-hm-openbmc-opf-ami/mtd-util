@@ -620,8 +620,8 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev,
     FWDEBUG("pfm length is 0x" << std::hex << pfm_hdr->length);
     // svn version check with existing env from OTP configuration
     uint8_t svn_value = pfm_hdr->svn;
-    uint64_t svn = pow(2, svn_value);
-    // TODO: Read the existing EVN from OTP configuration
+    uint64_t svn = pow(2, svn_value)-1;
+    // TODO: Read the existing SVN from OTP configuration
     uint64_t expected_svn = 0;
     if (svn < expected_svn)
     {
