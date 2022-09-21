@@ -61,12 +61,12 @@ constexpr uint32_t pfr_perm_sign_combined_cpld_update = 0x40;
 constexpr uint32_t pfr_perm_sign_afm_update = 0x20;
 
 constexpr size_t pfr_blk_size = 0x1000;
-constexpr size_t pfr_pfm_max_size = 64 * 1024;           // 64 kB
-constexpr size_t pfr_cpld_update_size = 1 * 1024 * 1024; // 1 MB
-constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;    // 24 MB
-constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;    // 32 MB
-constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024;// 32 MB
-constexpr size_t pfr_afm_max_size = 128 * 1024;          // 128KB
+constexpr size_t pfr_pfm_max_size = 64 * 1024;                // 64 kB
+constexpr size_t pfr_cpld_update_size = 1 * 1024 * 1024;      // 1 MB
+constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;         // 24 MB
+constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;         // 32 MB
+constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024; // 32 MB
+constexpr size_t pfr_afm_max_size = 128 * 1024;               // 128KB
 constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 // TODO: confirm the image size before merging the patch
@@ -597,8 +597,8 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
 }
 
 template <typename deviceClassT>
-bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filename,
-               size_t dev_offset)
+bool secure_boot_image_update(mtd<deviceClassT>& dev,
+                              const std::string& filename, size_t dev_offset)
 {
     if (!pfr_authenticate(filename, true))
     {
@@ -612,6 +612,7 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filenam
     FWDEBUG("file mapped " << file.size() << " bytes at 0x" << std::hex
                            << reinterpret_cast<unsigned long>(offset));
 
+    auto block0 = reinterpret_cast<const blk0*>(offset);
     // walk the bitmap, erase and copy
     offset += blk0blk1_size * 2; // one blk0blk1 for package, one for pfm
     auto pfm_hdr = reinterpret_cast<const pfm*>(offset);
@@ -640,6 +641,7 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filenam
     constexpr uint32_t secondary_image_offset = 0x04000000;
     constexpr uint32_t fit_image_block = 0xb00;
     constexpr uint32_t blocks_skip = 0xA80;
+    constexpr uint32_t uboot_block = 0x10;
     dev.erase(pfm_address + dev_offset, pfm_region_size);
     dev.write_raw(pfm_address + dev_offset, pfm_data);
     // set offset to the beginning of the compressed data
@@ -649,12 +651,34 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev, const std::string& filenam
     uint32_t erase_end_addr = 0;
     uint32_t write_end_addr = 0;
     uint32_t blocks_to_skip = 0;
+    uint32_t uboot_offset = dev_offset;
+    bool rot_a_update_done = false;
     for (uint32_t blk = 0; blk < pbc_hdr->bitmap_size; blk += wr_count)
     {
         if ((dev_offset == secondary_image_offset) && (blk >= fit_image_block))
         {
             blocks_to_skip = blocks_skip;
         }
+        /* When secondary update is initiated for image type 0xf1 the ROT SPL is
+        updated in the primary region and uboot, pfm, fit image is updated in
+        secondary region */
+        if (!rot_a_update_done)
+        {
+            if ((block0->pc_type == secure_boot_pc_type_bmc) &&
+                (uboot_offset == secondary_image_offset))
+            {
+                if ((blk == 0))
+                {
+                    dev_offset = 0;
+                }
+                else if (blk == uboot_block)
+                {
+                    dev_offset = uboot_offset;
+                    rot_a_update_done = true;
+                }
+            }
+        }
+
         if ((blk % 8) == 0)
         {
             wr_count = 1;
