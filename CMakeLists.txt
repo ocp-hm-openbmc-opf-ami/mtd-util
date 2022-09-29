@@ -66,7 +66,7 @@ find_package(Boost REQUIRED COMPONENTS iostreams)
 include_directories(${Boost_INCLUDE_DIRS})
 link_directories(${Boost_LIBRARY_DIRS})
 
-add_executable(mtd-util "mtd-util.cpp" "debug.cpp" "mtd.cpp" "pfr.cpp")
+add_executable(mtd-util "mtd-util.cpp" "debug.cpp" "mtd.cpp" "pfr.cpp" "sram_batback.cpp")
 target_link_libraries(mtd-util ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(mtd-util Boost::iostreams)
 target_link_libraries(mtd-util OpenSSL::Crypto)
