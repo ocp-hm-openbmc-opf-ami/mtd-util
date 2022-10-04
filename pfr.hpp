@@ -46,6 +46,7 @@ constexpr uint32_t pfr_pc_type_partial_update = 0x05;
 constexpr uint32_t pfr_pc_type_afm_update = 0x06;
 constexpr uint32_t pfr_pc_type_combined_cpld_update = 0x07;
 constexpr uint32_t secure_boot_pc_type_bmc = 0xf1;
+constexpr uint32_t pfr_pc_type_retimer_update = 0x09;
 constexpr uint32_t pfr_pc_type_cancel_cert = 0x100;
 constexpr uint32_t pfr_pc_type_pfr_decommission = 0x200;
 
@@ -59,6 +60,7 @@ constexpr uint32_t secure_boot_perm_sign_bmc_update = 0x08;
 constexpr uint32_t pfr_perm_sign_cpld_update = 0x10;
 constexpr uint32_t pfr_perm_sign_combined_cpld_update = 0x40;
 constexpr uint32_t pfr_perm_sign_afm_update = 0x20;
+constexpr uint32_t pfr_perm_sign_retimer_update = 0x04;
 
 constexpr size_t pfr_blk_size = 0x1000;
 constexpr size_t pfr_pfm_max_size = 64 * 1024;                // 64 kB
@@ -71,6 +73,7 @@ constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 // TODO: confirm the image size before merging the patch
 constexpr size_t pfr_combined_cpld_max_size = 1 * 1024 * 1024; // 1 MB
+constexpr size_t pfr_retimer_max_size = 1 * 1024 * 1024;       // 1 MB
 
 constexpr uint32_t curve_secp256r1 = 0xc7b88c74;
 constexpr uint32_t curve_secp384r1 = 0x08f07b47;
