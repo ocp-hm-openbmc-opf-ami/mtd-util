@@ -458,8 +458,20 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                             << reinterpret_cast<unsigned long>(pbc_map));
 
     // copy the pfm manually (not part of the compression bitmap)
-    constexpr size_t pfm_address = 0x80000;
+    constexpr size_t pfm_address_old_layout = 0x80000;
+    constexpr size_t pfm_address_new_layout = 0x100000;
     constexpr size_t pfm_region_size = 0x20000;
+
+    auto pfm_rev = pfm_hdr->oem_data[4];
+    // pfm_rev is 0xFF  for old flash layout and
+    // 0x01 for new flash layout
+    FWDEBUG("PFM version " << std::to_string(pfm_rev));
+
+    size_t pfm_address = pfm_address_old_layout;
+
+    if (pfm_rev == 0x01)
+        pfm_address = pfm_address_new_layout;
+
     dev.erase(pfm_address + dev_offset, pfm_region_size);
     dev.write_raw(pfm_address + dev_offset, pfm_data);
     // set offset to the beginning of the compressed data
