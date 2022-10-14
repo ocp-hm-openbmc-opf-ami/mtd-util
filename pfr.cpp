@@ -311,6 +311,14 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
             return false;
         }
     }
+    else if (pc_type == secure_boot_pc_type_otp)
+    {
+        if (b0->pc_length > secure_boot_otp_max_size)
+        {
+            FWERROR("bmc OTP image too big");
+            return false;
+        }
+    }
     else if ((pc_type == pfr_pc_type_pch_pfm) ||
              (pc_type == pfr_pc_type_bmc_pfm))
     {
@@ -497,6 +505,8 @@ static inline uint32_t get_required_perm(uint32_t pc_type)
             return pfr_perm_sign_bmc_update;
         case secure_boot_pc_type_bmc:
             return secure_boot_perm_sign_bmc_update;
+        case secure_boot_pc_type_otp:
+            return secure_boot_perm_sign_otp_update;
         case pfr_pc_type_partial_update:
             return pfr_perm_sign_pch_pfm | pfr_perm_sign_pch_update;
         case pfr_pc_type_afm_update:
