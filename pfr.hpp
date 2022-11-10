@@ -61,8 +61,8 @@ constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;         // 24 MB
 constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;         // 32 MB
 constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024; // 32 MB
 // TODO: confirm the image size before merging
-constexpr size_t secure_boot_otp_max_size = 67 * 1024;        // 67 KB
-constexpr size_t pfr_afm_max_size = 128 * 1024;               // 128KB
+constexpr size_t secure_boot_otp_max_size = 67 * 1024; // 67 KB
+constexpr size_t pfr_afm_max_size = 128 * 1024;        // 128KB
 constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 // TODO: confirm the image size before merging the patch
@@ -649,7 +649,10 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev,
     constexpr size_t pfm_region_size = 0x20000;
     constexpr uint32_t secondary_image_offset = 0x04000000;
     constexpr uint32_t fit_image_block = 0xb00;
-    constexpr uint32_t blocks_skip = 0xA80;
+    // As per secure boot image layout the difference in the start address of
+    // Image-A kernel fit image and Image-B kernel fit image is 0xA60000 (0xA60
+    // 4K blocks)
+    constexpr uint32_t blocks_skip = 0xA60;
     constexpr uint32_t uboot_block = 0x10;
     dev.erase(pfm_address + dev_offset, pfm_region_size);
     dev.write_raw(pfm_address + dev_offset, pfm_data);
@@ -725,7 +728,7 @@ bool secure_boot_image_update(mtd<deviceClassT>& dev,
                 if (region->type == type_spi_region)
                 {
                     // check if the first block is within this region
-                    if (region->start <= (blk - blocks_to_skip) * pfr_blk_size)
+                    if (region->start <= (blk * pfr_blk_size))
                     {
                         // check if the last block is within this region
                         if ((blk + er_count) * pfr_blk_size <= region->end)
