@@ -197,7 +197,7 @@ void usage(void)
            "       mtd-util [-v] [-d <mtd-device>] [-f] c[p] offset file len\n"
            "       mtd-util [-v] [-d <mtd-device>] d[ump] offset [len]\n"
            "       mtd-util [-v] [-d <mtd-device>] p[fr] a[uthenticate] file\n"
-           "       mtd-util [-v] [-d <mtd-device>] p[fr] s[tage] file "
+           "       mtd-util [-v] [-d <mtd-device>] p[fr] s[tage] file\n"
            "       mtd-util [-v] [-d <mtd-device>] s[ecure_boot] file offset\n"
            "[offset]\n"
            "       mtd-util [-v] [-d <mtd-device>] [-r] p[fr] w[rite] file "
@@ -332,7 +332,7 @@ int main(int argc, char* argv[])
         optind++;
     }
 #ifdef DEVELOPER_OPTIONS
-    if (argv[optind][0] == 'e')
+    else if (argv[optind][0] == 'e')
     {
         int offset = 0;
         action = ACTION_ERASE;
