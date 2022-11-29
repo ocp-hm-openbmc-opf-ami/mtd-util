@@ -476,7 +476,10 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
     uint32_t write_end_addr = 0;
     for (uint32_t blk = 0; blk < pbc_hdr->bitmap_size; blk += wr_count)
     {
-        if ((blk % 8) == 0)
+        // Every flash partition is 64k aligned. Since driver supports 64k erase
+        // and write, a chunk of 64k can be handled at once. mod 16 picks up 2
+        // bytes at once (1 bit per page * 4k page size * 2 bytes = 64k)
+        if ((blk % 16) == 0)
         {
             wr_count = 1;
             er_count = 1;
@@ -486,6 +489,10 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                 // try to do 64k first
                 // 64k erase is fine if all erase bits are set and either
                 // all copy bits or no copy bits are set
+
+                // Determine erase count and write count
+                // Erase count being 1 implies flash partition is not 64k
+                // aligned (helps in catching errors)
                 er_count =
                     (act_map[b8] == 0xff && act_map[b8 + 1] == 0xff) ? 16 : 1;
                 wr_count = ((pbc_map[b8] == 0xff && pbc_map[b8 + 1] == 0xff) ||
@@ -496,6 +503,7 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
         }
         bool erase = (act_map[blk / 8] >> (7 - blk % 8)) & 1;
         bool copy = (pbc_map[blk / 8] >> (7 - blk % 8)) & 1;
+
         if (!erase)
         {
             continue;
@@ -521,12 +529,14 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                             region_is_unsigned = (region->hash_info == 0);
                             break;
                         }
-                        // check if a single block is within this region
+
                         if ((blk + 1) * pfr_blk_size <= region->end)
                         {
-                            er_count = 1;
-                            region_is_unsigned = (region->hash_info == 0);
-                            break;
+                            // Since flash partitions are 64k aligned, the block
+                            // will always be within end region. This check is
+                            // just to catch any special case if any
+                            FWDEBUG("The block is not 64k aligned !");
+                            return false;
                         }
                     }
                     region_offset +=
@@ -555,19 +565,29 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                 continue;
             }
         }
-        if (blk % 16 == 0)
+
+        if (erase)
         {
-            if (er_count == 1)
+            // Since we support only 64k erase
+            if (er_count == 16)
             {
-                FWDEBUG("block " << std::hex << pfr_blk_size * blk
-                                 << " has erase size 1; erasing 64k");
-                er_count = 16;
+                FWDEBUG("erase(" << std::hex << pfr_blk_size * blk << ", "
+                                 << pfr_blk_size * er_count + dev_offset
+                                 << ")");
+                dev.erase(pfr_blk_size * blk + dev_offset,
+                          pfr_blk_size * er_count);
+                erase_end_addr = (pfr_blk_size * (blk + er_count)) - 1;
+                FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+                er_count = 0;
             }
-            FWDEBUG("erase(" << std::hex << pfr_blk_size * blk << ", "
-                             << pfr_blk_size * er_count + dev_offset << ")");
-            dev.erase(pfr_blk_size * blk + dev_offset, pfr_blk_size * er_count);
-            erase_end_addr = (pfr_blk_size * (blk + er_count)) - 1;
-            FWDEBUG("erase_end_addr: " << std::hex << erase_end_addr);
+
+            // Catch any special cases. As long as partition is 64k aligned,
+            // this condition will be false.
+            else if (er_count == 1)
+            {
+                FWDEBUG("4k Erase not supported !");
+                return false;
+            }
         }
 
         if (copy)
@@ -576,8 +596,7 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
             write_end_addr = (pfr_blk_size * (blk + wr_count)) - 1;
             FWDEBUG("write_end_addr: " << std::hex << write_end_addr);
 
-            // Check if current write address wasn't part of previous 64K sector
-            // erase. and erase it here.
+            // Check if the region to be written is erased
             if ((write_end_addr > erase_end_addr) ||
                 ((pfr_blk_size * blk) > erase_end_addr))
             {
