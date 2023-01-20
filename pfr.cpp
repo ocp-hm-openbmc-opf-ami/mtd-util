@@ -355,7 +355,7 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
     }
 
     // Verify Hash256 is 0xff and Hash384 matches PC
-    if (!mem_check(b0->sha256, b0->pc_length, 0xff))
+    if (!mem_check(b0->sha256, sizeof(b0->sha256), 0xff))
     {
         FWWARN("sha256 signature is not empty");
         // do not enforce until images are generated correctly
@@ -1001,18 +1001,14 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
             FWINFO("parse FVM: spi_region");
             auto info = reinterpret_cast<const spi_region*>(offset);
             offset += sizeof(*info);
-            std::unique_ptr<Hash> hash256 = nullptr;
             std::unique_ptr<Hash> hash384 = nullptr;
             // size of spi region depends on hashes present
             if (info->hash_info & sha256_present)
             {
-                FWINFO("           spi_region + sha256 not supported");
-                // For now, allow images that are dual hashed to pass
-                // but reject images that are only sha256 hashed
-                if (!(info->hash_info & sha384_present))
-                {
-                    return false;
-                }
+                FWINFO("spi_region + sha256 not supported");
+                // Reject images that are only sha256 hashed
+                return false;
+                
             }
             if (info->hash_info & sha384_present)
             {
@@ -1057,28 +1053,13 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
                 }
                 if (data)
                 {
-                    if (hash256)
-                    {
-                        hash256->update(data, pbc_hdr->page_size);
-                    }
                     if (hash384)
                     {
                         hash384->update(data, pbc_hdr->page_size);
                     }
                 }
             }
-            if (hash256)
-            {
-                if (hash256->verify())
-                {
-                    FWINFO("FVM SHA-256 verify ok");
-                }
-                else
-                {
-                    FWERROR("FVM SHA-256 verify failed");
-                    return false;
-                }
-            }
+
             if (hash384)
             {
                 if (hash384->verify())

@@ -157,7 +157,7 @@ int file_mtd_emulation::write_raw(uint32_t addr, const cbspan& in_buf)
 }
 
 template <typename deviceClassT>
-mtd<deviceClassT>::mtd() : _impl(), _path()
+mtd<deviceClassT>::mtd() : _impl(), _path(), _fd(-1)
 {
 }
 
@@ -182,6 +182,8 @@ void mtd<deviceClassT>::open(const std::string& path)
 template <typename deviceClassT>
 mtd<deviceClassT>::~mtd()
 {
+            if (_fd >= 0)
+            ::close(_fd);
 }
 
 template <typename deviceClassT>
