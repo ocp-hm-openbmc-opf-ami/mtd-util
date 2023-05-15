@@ -23,6 +23,7 @@
 #include <openssl/sha.h>
 
 #include <fstream>
+#include <gpiod.hpp>
 
 static const void* base_addr = NULL;
 static unsigned int image_offset(const void* thing)
@@ -776,6 +777,40 @@ static uint32_t read_saved_layout(void)
     return layout;
 }
 
+static bool getGPIOInput(const std::string& name, gpiod::line& gpioLine,
+                         uint8_t& value)
+{
+    // Find the GPIO line
+    gpioLine = gpiod::find_line(name);
+    if (!gpioLine)
+    {
+        FWERROR("Failed to find the GPIO line: " << name.c_str());
+        return false;
+    }
+    try
+    {
+        gpioLine.request({__FUNCTION__, gpiod::line_request::DIRECTION_INPUT});
+    }
+    catch (const std::exception& e)
+    {
+        FWERROR("Failed to request the GPIO line: " << e.what());
+        gpioLine.release();
+        return false;
+    }
+    try
+    {
+        value = gpioLine.get_value();
+    }
+    catch (const std::exception& e)
+    {
+        FWERROR("Failed to get the value of GPIO line: " << e.what());
+        gpioLine.release();
+        return false;
+    }
+    gpioLine.release();
+    return true;
+}
+
 static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
                                  const size_t max_size)
 {
@@ -788,17 +823,32 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
         FWERROR("An invalid pointer reference");
         return false;
     }
-    static constexpr const char prod_id_file[] = "/var/cache/private/prodID";
-    uint32_t prod_id;
-    std::ifstream file(prod_id_file);
 
-    if (!file.is_open())
+    static const std::array<std::string, 6> boardIdGpioLines = {
+        "FM_BOARD_SKU_ID0", "FM_BOARD_SKU_ID1", "FM_BOARD_SKU_ID2",
+        "FM_BOARD_SKU_ID3", "FM_BOARD_SKU_ID4", "FM_BOARD_SKU_ID5"};
+
+    // BOARD ID SGPIO lines
+    gpiod::line boardIdGpioLine;
+
+    // read Board Id version
+    uint8_t board_id = 0;
+    for (size_t idx = 0; const auto& gLine : boardIdGpioLines)
     {
-        FWERROR("failed to open prodID file");
-        return false;
+        uint8_t value = 0;
+        if (getGPIOInput(gLine, boardIdGpioLine, value))
+        {
+            value = value << idx++;
+            board_id = board_id | value;
+        }
+        else
+        {
+            FWERROR("Failed to read GPIO line: " << gLine.c_str());
+            board_id = 0;
+            break;
+        }
     }
-
-    file >> std::hex >> prod_id;
+    FWDEBUG("Board ID read via GPIO's is : " << std::to_string(board_id));
 
     // Validate PFM
     auto pfm_str = reinterpret_cast<const pfm*>(offset);
@@ -808,9 +858,9 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
         return false;
     }
 
-    if (pfm_str->plt.platform_type != prod_id)
+    if (pfm_str->plt.platform_type != board_id)
     {
-        FWERROR("product id not valid");
+        FWERROR("board id not valid");
         return false;
     }
 

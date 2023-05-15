@@ -65,8 +65,7 @@ constexpr size_t secure_boot_otp_max_size = 67 * 1024; // 67 KB
 constexpr size_t pfr_afm_max_size = 128 * 1024;        // 128KB
 constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
-// TODO: confirm the image size before merging the patch
-constexpr size_t pfr_combined_cpld_max_size = 1 * 1024 * 1024; // 1 MB
+constexpr size_t pfr_combined_cpld_max_size = 2 * 1024 * 1024; // 2 MB
 constexpr size_t pfr_retimer_max_size = 1 * 1024 * 1024;       // 1 MB
 
 constexpr uint32_t curve_secp256r1 = 0xc7b88c74;

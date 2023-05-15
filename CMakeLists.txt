@@ -61,6 +61,7 @@ add_executable(mtd-util "mtd-util.cpp" "debug.cpp" "mtd.cpp" "pfr.cpp")
 target_link_libraries(mtd-util ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(mtd-util Boost::iostreams)
 target_link_libraries(mtd-util OpenSSL::Crypto)
+target_link_libraries(mtd-util gpiodcxx)
 
 install (TARGETS mtd-util DESTINATION bin)
 
