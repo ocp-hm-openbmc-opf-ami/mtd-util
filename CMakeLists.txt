@@ -15,12 +15,12 @@
 
 project(intel-fw-update CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ###############
 # CMake options
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.5)
 
 ###############
 # build mtd emulation version
@@ -40,7 +40,7 @@ endif()
 
 ###############
 # C++ options
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++14 -ffunction-sections -Wl,--gc-sections")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++20 -pthread -ffunction-sections -Wl,--gc-sections")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/sysroot/include)
 
@@ -54,11 +54,15 @@ add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY)
 add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
 add_definitions(-DBOOST_ALL_NO_LIB)
 find_package(Boost REQUIRED COMPONENTS iostreams)
+include_directories(sdbusplus)
+link_directories(sdbusplus)
 include_directories(${Boost_INCLUDE_DIRS})
 link_directories(${Boost_LIBRARY_DIRS})
 
 add_executable(mtd-util "mtd-util.cpp" "debug.cpp" "mtd.cpp" "pfr.cpp")
 target_link_libraries(mtd-util ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(mtd-util systemd)
+target_link_libraries(mtd-util sdbusplus)
 target_link_libraries(mtd-util Boost::iostreams)
 target_link_libraries(mtd-util OpenSSL::Crypto)
 target_link_libraries(mtd-util gpiodcxx)
