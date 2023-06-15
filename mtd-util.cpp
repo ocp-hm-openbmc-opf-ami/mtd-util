@@ -63,6 +63,7 @@ int buf_to_flash(mtd<deviceClassT>& dev, const uint8_t* fbuf, size_t start,
 
     return 0;
 }
+#endif /* DEVELOPER_OPTIONS */
 
 template <typename deviceClassT>
 int cp_to_flash(mtd<deviceClassT>& dev, std::string& filename, size_t start)
@@ -77,7 +78,6 @@ int cp_to_flash(mtd<deviceClassT>& dev, std::string& filename, size_t start)
 
     return 0;
 }
-#endif /* DEVELOPER_OPTIONS */
 
 template <typename deviceClassT>
 int cp_to_file(mtd<deviceClassT>& dev, std::string& filename, size_t start,
@@ -192,8 +192,8 @@ void usage(void)
            "       mtd-util [-v] [-d <mtd-device>] e[rase] start +len\n"
            "       mtd-util [-v] [-d <mtd-device>] e[rase] start end\n"
            "       mtd-util [-v] [-d <mtd-device>] w[rite] offset Xx [Xx ...]\n"
-           "       mtd-util [-v] [-d <mtd-device>] c[p] file offset\n"
 #endif /* DEVELOPER_OPTIONS */
+           "       mtd-util [-v] [-d <mtd-device>] c[p] file offset\n"
            "       mtd-util [-v] [-d <mtd-device>] [-f] c[p] offset file len\n"
            "       mtd-util [-v] [-d <mtd-device>] d[ump] offset [len]\n"
            "       mtd-util [-v] [-d <mtd-device>] p[fr] a[uthenticate] file\n"
@@ -302,7 +302,6 @@ int main(int argc, char* argv[])
                 return 1;
             }
         }
-#ifdef DEVELOPER_OPTIONS
         else if ((optind + 2) == argc)
         {
             // puts("file to flash");
@@ -323,7 +322,6 @@ int main(int argc, char* argv[])
                 return 1;
             }
         }
-#endif /* DEVELOPER_OPTIONS */
         else
         {
             std::cerr << "wrong number of arguments to cp command\n";
@@ -475,14 +473,14 @@ int main(int argc, char* argv[])
             case ACTION_ERASE:
                 ret = erase_flash(dev, start, len);
                 break;
-            case ACTION_CP_TO_FLASH:
-                ret = cp_to_flash(dev, filename, start);
-                break;
             case ACTION_WRITE_TO_FLASH:
                 ret = buf_to_flash(dev, buf, start, len);
                 delete[] buf;
                 break;
 #endif /* DEVELOPER_OPTIONS */
+            case ACTION_CP_TO_FLASH:
+                ret = cp_to_flash(dev, filename, start);
+                break;
             case ACTION_CP_TO_FILE:
                 ret = cp_to_file(dev, filename, start, len);
                 break;
