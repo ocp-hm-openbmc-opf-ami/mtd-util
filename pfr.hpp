@@ -58,7 +58,7 @@ constexpr size_t pfr_blk_size = 0x1000;
 constexpr size_t pfr_pfm_max_size = 64 * 1024;                // 64 kB
 constexpr size_t pfr_cpld_update_size = 1 * 1024 * 1024;      // 1 MB
 constexpr size_t pfr_pch_max_size = 24 * 1024 * 1024;         // 24 MB
-constexpr size_t pfr_bmc_max_size = 32 * 1024 * 1024;         // 32 MB
+constexpr size_t pfr_bmc_max_size = 33 * 1024 * 1024;         // 33 MB
 constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024; // 32 MB
 // TODO: confirm the image size before merging
 constexpr size_t secure_boot_otp_max_size = 67 * 1024; // 67 KB
