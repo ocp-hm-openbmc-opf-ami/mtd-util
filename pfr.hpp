@@ -334,7 +334,7 @@ struct smbus_rule
     uint8_t bus;
     uint8_t rule;
     uint8_t addr;
-    uint8_t whitelist[32];
+    uint8_t allowlist[32];
 } __attribute__((packed));
 
 struct fvm_address
