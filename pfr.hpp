@@ -35,6 +35,8 @@ constexpr uint32_t pfr_pc_type_bmc_update = 0x04;
 constexpr uint32_t pfr_pc_type_partial_update = 0x05;
 constexpr uint32_t pfr_pc_type_afm_update = 0x06;
 constexpr uint32_t pfr_pc_type_combined_cpld_update = 0x07;
+constexpr uint32_t pfr_pc_type_per_device_afm= 0x08;
+constexpr uint32_t pfr_img_type_add_to_update_afm= 0x0a;
 constexpr uint32_t secure_boot_pc_type_bmc = 0xf1;
 constexpr uint32_t secure_boot_pc_type_otp = 0xf2;
 constexpr uint32_t pfr_pc_type_retimer_update = 0x09;
@@ -62,7 +64,7 @@ constexpr size_t pfr_bmc_max_size = 33 * 1024 * 1024;         // 33 MB
 constexpr size_t secure_boot_bmc_max_size = 32 * 1024 * 1024; // 32 MB
 // TODO: confirm the image size before merging
 constexpr size_t secure_boot_otp_max_size = 67 * 1024; // 67 KB
-constexpr size_t pfr_afm_max_size = 128 * 1024;        // 128KB
+constexpr size_t pfr_afm_max_size = 512 * 1024;        // 512KB
 constexpr size_t pfr_cancel_cert_size = 128;
 constexpr uint32_t pfr_max_key_id = 127;
 constexpr size_t pfr_combined_cpld_max_size = 2 * 1024 * 1024; // 2 MB

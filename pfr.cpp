@@ -327,6 +327,22 @@ static bool is_block0_valid(const blk0* b0, const uint8_t* protected_content)
             return false;
         }
     }
+    else if (pc_type == pfr_pc_type_per_device_afm)
+    {
+        if (b0->pc_length > pfr_afm_max_size)
+        {
+            FWERROR("Per device afm image too big");
+            return false;
+        }
+    }
+    else if (pc_type == pfr_img_type_add_to_update_afm)
+    {
+        if (b0->pc_length > pfr_afm_max_size)
+        {
+            FWERROR("Add to update afm image too big");
+            return false;
+        }
+    }
     else if (pc_type == pfr_pc_type_combined_cpld_update)
     {
         if (b0->pc_length > pfr_combined_cpld_max_size)
@@ -501,6 +517,10 @@ static inline uint32_t get_required_perm(uint32_t pc_type)
         case pfr_pc_type_partial_update:
             return pfr_perm_sign_pch_pfm | pfr_perm_sign_pch_update;
         case pfr_pc_type_afm_update:
+            return pfr_perm_sign_afm_update;
+        case pfr_pc_type_per_device_afm:
+            return pfr_perm_sign_afm_update;
+        case pfr_img_type_add_to_update_afm:
             return pfr_perm_sign_afm_update;
         case pfr_pc_type_cancel_cert:
             return pfr_perm_sign_all;
