@@ -1071,6 +1071,7 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
             FWINFO("parse FVM: spi_region");
             auto info = reinterpret_cast<const spi_region*>(offset);
             offset += sizeof(*info);
+            uint8_t flag = reinterpret_cast<const uint8_t*>(&info->rsvd)[3];
             std::unique_ptr<Hash> hash384 = nullptr;
             // size of spi region depends on hashes present
             if (info->hash_info & sha256_present)
@@ -1087,6 +1088,15 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
                 hash384 = std::make_unique<Hash>(EVP_sha384(),
                                                  cbspan(offset, sha384_size));
                 offset += sha384_size;
+            }
+
+            //Bit 0 – 1 indicates measurement enabled.
+            if (flag == 1)
+            {
+                offset += sizeof(uint8_t) * 2;
+                uint16_t measurement_value_size = *reinterpret_cast<const uint16_t*>(offset);
+                offset += sizeof(uint16_t);
+                offset += measurement_value_size;
             }
             // hash the parts by walking the pbc
             if (pbc_hdr->magic != pbc_magic)
