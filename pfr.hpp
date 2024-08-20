@@ -17,10 +17,13 @@
 
 #pragma once
 
+#include <boost/algorithm/string.hpp>
+#include <boost/asio.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <sdbusplus/bus.hpp>
 #include <string>
 
 #include "debug.h"
@@ -35,8 +38,8 @@ constexpr uint32_t pfr_pc_type_bmc_update = 0x04;
 constexpr uint32_t pfr_pc_type_partial_update = 0x05;
 constexpr uint32_t pfr_pc_type_afm_update = 0x06;
 constexpr uint32_t pfr_pc_type_combined_cpld_update = 0x07;
-constexpr uint32_t pfr_pc_type_per_device_afm= 0x08;
-constexpr uint32_t pfr_img_type_add_to_update_afm= 0x0a;
+constexpr uint32_t pfr_pc_type_per_device_afm = 0x08;
+constexpr uint32_t pfr_img_type_add_to_update_afm = 0x0a;
 constexpr uint32_t secure_boot_pc_type_bmc = 0xf1;
 constexpr uint32_t secure_boot_pc_type_otp = 0xf2;
 constexpr uint32_t pfr_pc_type_retimer_update = 0x09;
@@ -392,6 +395,19 @@ struct pbc
     // payload
 } __attribute__((packed));
 
+static std::string serviceName;
+static std::string pfrPath;
+struct SubPartitionProperties
+{
+    std::string name;
+    uint64_t offset;
+    uint64_t size;
+};
+using DbusSubtree =
+    std::map<std::string, std::map<std::string, std::vector<std::string>>>;
+using PropertiesType =
+    std::vector<std::pair<std::string, std::variant<std::string, uint64_t>>>;
+
 bool pfr_authenticate(const std::string& filename, bool check_root_key);
 
 template <typename deviceClassT>
@@ -414,6 +430,276 @@ bool pfr_stage(mtd<deviceClassT>& dev, const std::string& filename,
     return true;
 }
 
+inline PropertiesType getAllProperties(sdbusplus::bus::bus& bus,
+                                       const std::string& service,
+                                       const std::string& objPath,
+                                       const std::string& interface)
+{
+    PropertiesType properties;
+
+    try
+    {
+        auto methodCall =
+            bus.new_method_call(service.c_str(), objPath.c_str(),
+                                "org.freedesktop.DBus.Properties", "GetAll");
+        methodCall.append(interface);
+
+        auto reply = bus.call(methodCall);
+
+        reply.read(properties);
+    }
+    catch (const std::exception& e)
+    {
+        FWDEBUG("Failed to get all properties for " << interface << ": "
+                                                    << e.what());
+    }
+    return properties;
+}
+
+inline DbusSubtree getSubTree(sdbusplus::bus::bus& bus, const std::string& path,
+                              const std::vector<std::string>& interfaces,
+                              int32_t depth)
+{
+    DbusSubtree response;
+
+    try
+    {
+        auto methodCall = bus.new_method_call(
+            "xyz.openbmc_project.ObjectMapper",
+            "/xyz/openbmc_project/object_mapper",
+            "xyz.openbmc_project.ObjectMapper", "GetSubTree");
+        methodCall.append(path);
+        methodCall.append(depth);
+        methodCall.append(interfaces);
+
+        auto reply = bus.call(methodCall);
+
+        reply.read(response);
+    }
+    catch (const std::exception& e)
+    {
+        FWDEBUG("Failed to get getSubTree: " << e.what());
+    }
+    return response;
+}
+
+inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size)
+{
+    auto bus = sdbusplus::bus::new_default();
+
+    std::vector<std::string> interfaces = {
+        "xyz.openbmc_project.Configuration.PFR"};
+    auto subTree =
+        getSubTree(bus, "/xyz/openbmc_project/inventory/system", interfaces, 0);
+
+    if (subTree.empty())
+    {
+        FWDEBUG("No PFR objects found.");
+        return false;
+    }
+
+    bool foundValidPfm = false;
+
+    for (const auto& [objPath, serviceVec] : subTree)
+    {
+        if (!serviceVec.empty() && boost::ends_with(objPath, "Baseboard/PFR"))
+        {
+            serviceName = serviceVec.begin()->first;
+            pfrPath = objPath;
+            FWDEBUG("Found PFR object at: " << objPath << " with service: "
+                                            << serviceName);
+
+            auto propertiesList =
+                getAllProperties(bus, serviceName, objPath,
+                                 "xyz.openbmc_project.Configuration.PFR");
+
+            const uint64_t* pfm_offset = nullptr;
+            const uint64_t* pfm_size = nullptr;
+
+            for (const auto& [propName, propVariant] : propertiesList)
+            {
+                if (propName == "PFMOffset")
+                {
+                    pfm_offset = std::get_if<uint64_t>(&propVariant);
+                    if (pfm_offset)
+                    {
+                        pfm_address = static_cast<uint32_t>(*pfm_offset);
+                        FWDEBUG("PFMOffset: 0x" << std::hex << pfm_address);
+                    }
+                }
+                else if (propName == "PFMSize")
+                {
+                    pfm_size = std::get_if<uint64_t>(&propVariant);
+                    if (pfm_size)
+                    {
+                        pfm_region_size = static_cast<uint32_t>(*pfm_size);
+                        FWDEBUG("PFMSize: 0x" << std::hex << pfm_region_size);
+                    }
+                }
+            }
+            // Check if both PFMOffset and PFMSize are found for the current
+            // object
+            if (pfm_offset && pfm_size)
+            {
+                foundValidPfm = true;
+                break;
+            }
+        }
+    }
+    if (!foundValidPfm)
+    {
+        FWDEBUG("Unable to read the PFM address/size");
+        return false;
+    }
+    return true;
+}
+
+inline std::optional<SubPartitionProperties> getSubPartitionProperties(
+    sdbusplus::bus::bus& bus, const std::string& service,
+    const std::string& objPath, const std::string& interfaceName)
+{
+
+    try
+    {
+        auto propertiesList =
+            getAllProperties(bus, service, objPath, interfaceName);
+        if (propertiesList.empty())
+        {
+            return std::nullopt; // Subpartition does not exist or no properties
+                                 // found
+        }
+
+        SubPartitionProperties properties;
+        bool nameFound = false, offsetFound = false, sizeFound = false;
+
+        for (const auto& [propName, propVariant] : propertiesList)
+        {
+
+            if (propName == "Name")
+            {
+                auto namePtr = std::get_if<std::string>(&propVariant);
+                if (namePtr)
+                {
+                    properties.name = *namePtr;
+                    nameFound = true;
+                    FWDEBUG("subpartition name: " << properties.name
+                                                  << " for the interface: "
+                                                  << interfaceName);
+                }
+            }
+            else if (propName == "Offset")
+            {
+                auto offsetPtr = std::get_if<uint64_t>(&propVariant);
+                if (offsetPtr)
+                {
+                    properties.offset = *offsetPtr;
+                    offsetFound = true;
+                    FWDEBUG("subpartition offset: " << properties.offset
+                                                    << " for the interface: "
+                                                    << interfaceName);
+                }
+            }
+            else if (propName == "Size")
+            {
+                auto sizePtr = std::get_if<uint64_t>(&propVariant);
+                if (sizePtr)
+                {
+                    properties.size = *sizePtr;
+                    sizeFound = true;
+                    FWDEBUG("subpartition size: " << properties.size
+                                                  << " for the interface: "
+                                                  << interfaceName);
+                }
+            }
+        }
+        if (nameFound && offsetFound && sizeFound)
+        {
+            return properties;
+        }
+        else
+        {
+            FWDEBUG("Not all required properties were found for the interface: "
+                    << interfaceName);
+            return std::nullopt;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        FWDEBUG("Failed to get properties for " << interfaceName << ": "
+                                                << e.what());
+    }
+
+    // Return an empty optional to indicate the subpartition was not found or an
+    // error occurred
+    return std::nullopt;
+}
+
+// Process sub-partitions
+template <typename deviceClassT>
+bool processSubPartitions(mtd<deviceClassT>& dev, uint32_t dev_offset,
+                          const uint8_t*& offset)
+{
+    offset -= blk0blk1_size;
+    auto bus = sdbusplus::bus::new_default();
+    bool success = false;
+    if (serviceName.empty() || pfrPath.empty())
+    {
+        FWDEBUG("Either serviceName or pfrPath is empty (or both).");
+        return success;
+    }
+    for (int part = 0; part >= 0; part++)
+    {
+        std::string interfaceName =
+            "xyz.openbmc_project.Configuration.PFR.SubPartition" +
+            std::to_string(part);
+        auto propertiesOpt =
+            getSubPartitionProperties(bus, serviceName, pfrPath, interfaceName);
+        if (!propertiesOpt)
+        {
+            FWDEBUG("SubPartition" << part
+                                   << " is not present or an error occurred.");
+            break; // Exit if a subpartition does not exist
+        }
+        auto sub_partition_name = propertiesOpt->name;
+        auto sub_partition_offset = propertiesOpt->offset;
+        auto sub_partition_size = propertiesOpt->size;
+        cbspan pfm_data(offset, sub_partition_size);
+
+        FWDEBUG("Processing sub_partition "
+                << sub_partition_name << ": offset = 0x" << std::hex
+                << sub_partition_offset << ", size = 0x" << std::hex
+                << sub_partition_size);
+
+        dev.write_raw(dev_offset + sub_partition_offset, pfm_data);
+        offset += sub_partition_size;
+        success = true;
+    }
+    return success;
+}
+
+template <typename deviceClassT>
+bool locate_and_place_pfm(mtd<deviceClassT>& dev, uint32_t dev_offset,
+                          const uint8_t*& offset, size_t pfm_size)
+{
+    uint32_t pfm_address;
+    uint32_t pfm_region_size;
+    if (!pfm_layout(pfm_address, pfm_region_size))
+    {
+        return false;
+    }
+
+    dev.erase(pfm_address + dev_offset, pfm_region_size);
+    if (!processSubPartitions(dev, dev_offset, offset))
+    {
+        offset += blk0blk1_size;
+        cbspan pfm_data(offset - blk0blk1_size, offset + pfm_size);
+        dev.write_raw(pfm_address + dev_offset, pfm_data);
+        offset += pfm_size;
+    }
+
+    return true;
+}
+
 template <typename deviceClassT>
 bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                size_t dev_offset, bool recovery_reset)
@@ -425,7 +711,7 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
     boost::iostreams::mapped_file file(filename,
                                        boost::iostreams::mapped_file::readonly);
     auto map_base = reinterpret_cast<const uint8_t*>(file.const_data());
-    auto offset = reinterpret_cast<const uint8_t*>(file.const_data());
+    auto offset = map_base;
 
     FWDEBUG("file mapped " << file.size() << " bytes at 0x" << std::hex
                            << reinterpret_cast<unsigned long>(offset));
@@ -437,12 +723,26 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
                              << " (magic:" << pfm_hdr->magic << ")");
     FWDEBUG("pfm length is 0x" << std::hex << pfm_hdr->length);
     size_t pfm_size = block_round(pfm_hdr->length, pfm_block_size);
-    cbspan pfm_data(offset - blk0blk1_size, offset + pfm_size);
-    offset += pfm_size;
+
+    if (pfm_hdr->magic != pfm_magic)
+    {
+        FWDEBUG("PFM Magic number is not matching !");
+        return false;
+    }
+    if (!locate_and_place_pfm(dev, dev_offset, offset, pfm_size))
+    {
+        return false;
+    }
     auto pbc_hdr = reinterpret_cast<const pbc*>(offset);
     FWDEBUG("pbc header at " << std::hex << pbc_hdr
                              << " (magic:" << pbc_hdr->magic << ")");
     FWDEBUG("pbc bitmap size 0x" << std::hex << pbc_hdr->bitmap_size);
+
+    if (pbc_hdr->magic != pbc_magic)
+    {
+        FWDEBUG("PBC Mgic number is not matching !");
+        return false;
+    }
     offset += sizeof(pbc);
     auto act_map = reinterpret_cast<const uint8_t*>(offset);
     FWDEBUG("active map at 0x" << std::hex
@@ -452,24 +752,6 @@ bool pfr_write(mtd<deviceClassT>& dev, const std::string& filename,
     FWDEBUG("pbc map at 0x" << std::hex
                             << reinterpret_cast<unsigned long>(pbc_map));
 
-    // copy the pfm manually (not part of the compression bitmap)
-    constexpr size_t pfm_address_old_layout = 0x80000;
-    constexpr size_t pfm_address_new_layout = 0x100000;
-    constexpr size_t pfm_region_size = 0x20000;
-
-    auto pfm_rev = pfm_hdr->oem_data[4];
-    // pfm_rev is 0xFF  for old flash layout and
-    // 0x01 for new flash layout
-    FWDEBUG("PFM version " << std::to_string(pfm_rev));
-
-    size_t pfm_address = pfm_address_old_layout;
-
-    if (pfm_rev == 0x01)
-        pfm_address = pfm_address_new_layout;
-
-    dev.erase(pfm_address + dev_offset, pfm_region_size);
-    dev.write_raw(pfm_address + dev_offset, pfm_data);
-    // set offset to the beginning of the compressed data
     offset += pbc_hdr->bitmap_size / 8;
     uint32_t wr_count = 1;
     uint32_t er_count = 1;
