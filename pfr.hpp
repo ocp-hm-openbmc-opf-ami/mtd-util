@@ -483,7 +483,8 @@ inline DbusSubtree getSubTree(sdbusplus::bus::bus& bus, const std::string& path,
     return response;
 }
 
-inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size)
+inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size,
+                       uint32_t& partition_num)
 {
     auto bus = sdbusplus::bus::new_default();
 
@@ -515,6 +516,7 @@ inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size)
 
             const uint64_t* pfm_offset = nullptr;
             const uint64_t* pfm_size = nullptr;
+            const uint64_t* pfm_subpart_num = nullptr;
 
             for (const auto& [propName, propVariant] : propertiesList)
             {
@@ -534,6 +536,15 @@ inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size)
                     {
                         pfm_region_size = static_cast<uint32_t>(*pfm_size);
                         FWDEBUG("PFMSize: 0x" << std::hex << pfm_region_size);
+                    }
+                }
+                else if (propName == "PartitionNo")
+                {
+                    pfm_subpart_num = std::get_if<uint64_t>(&propVariant);
+                    if (pfm_subpart_num)
+                    {
+                        partition_num = static_cast<uint32_t>(*pfm_subpart_num);
+                        FWDEBUG("PartitionNo: " << std::hex << partition_num);
                     }
                 }
             }
@@ -637,7 +648,7 @@ inline std::optional<SubPartitionProperties> getSubPartitionProperties(
 // Process sub-partitions
 template <typename deviceClassT>
 bool processSubPartitions(mtd<deviceClassT>& dev, uint32_t dev_offset,
-                          const uint8_t*& offset)
+                          const uint8_t*& offset, uint32_t& partition_num)
 {
     offset -= blk0blk1_size;
     auto bus = sdbusplus::bus::new_default();
@@ -647,7 +658,7 @@ bool processSubPartitions(mtd<deviceClassT>& dev, uint32_t dev_offset,
         FWDEBUG("Either serviceName or pfrPath is empty (or both).");
         return success;
     }
-    for (int part = 0; part >= 0; part++)
+    for (int part = 0; part < partition_num; part++)
     {
         std::string interfaceName =
             "xyz.openbmc_project.Configuration.PFR.SubPartition" +
@@ -683,13 +694,14 @@ bool locate_and_place_pfm(mtd<deviceClassT>& dev, uint32_t dev_offset,
 {
     uint32_t pfm_address;
     uint32_t pfm_region_size;
-    if (!pfm_layout(pfm_address, pfm_region_size))
+    uint32_t partition_num;
+    if (!pfm_layout(pfm_address, pfm_region_size, partition_num))
     {
         return false;
     }
 
     dev.erase(pfm_address + dev_offset, pfm_region_size);
-    if (!processSubPartitions(dev, dev_offset, offset))
+    if (!processSubPartitions(dev, dev_offset, offset, partition_num))
     {
         offset += blk0blk1_size;
         cbspan pfm_data(offset - blk0blk1_size, offset + pfm_size);
