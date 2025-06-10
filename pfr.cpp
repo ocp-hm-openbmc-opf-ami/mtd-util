@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2020-2022 Intel Corporation
+// Copyright (c) 2020-2025 Intel Corporation
 //
 // This software and the related documents are Intel copyrighted
 // materials, and your use of them is governed by the express license
@@ -76,8 +76,8 @@ class Hash
     bool verify() const
     {
         digest();
-        bool match = std::equal(hash.cbegin(), hash.cend(), expected.cbegin(),
-                                expected.cend());
+        bool match = std::equal(hash.begin(), hash.end(), expected.begin(),
+                                expected.end());
         if (!match)
         {
             auto expected_ = &expected[0];
@@ -1079,7 +1079,6 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
                 FWINFO("spi_region + sha256 not supported");
                 // Reject images that are only sha256 hashed
                 return false;
-                
             }
             if (info->hash_info & sha384_present)
             {
@@ -1090,11 +1089,12 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
                 offset += sha384_size;
             }
 
-            //Bit 0 – 1 indicates measurement enabled.
+            // Bit 0 – 1 indicates measurement enabled.
             if (flag == 1)
             {
                 offset += sizeof(uint8_t) * 2;
-                uint16_t measurement_value_size = *reinterpret_cast<const uint16_t*>(offset);
+                uint16_t measurement_value_size =
+                    *reinterpret_cast<const uint16_t*>(offset);
                 offset += sizeof(uint16_t);
                 offset += measurement_value_size;
             }

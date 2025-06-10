@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2015-2022 Intel Corporation
+// Copyright (c) 2015-2025 Intel Corporation
 //
 // This software and the related documents are Intel copyrighted
 // materials, and your use of them is governed by the express license
@@ -19,8 +19,9 @@
 #ifndef __FW_UPDATE_DEBUG_H__
 #define __FW_UPDATE_DEBUG_H__
 
-#include <gsl/span>
+#include <cstdint>
 #include <iostream>
+#include <span>
 
 typedef enum
 {
@@ -63,7 +64,7 @@ extern void fw_update_set_dbg_level(dbg_level l);
     } while (0)
 
 void _dump(dbg_level lvl, const char* fn, int lineno, const char* bname,
-           const gsl::span<const uint8_t>& buf);
+           const std::span<const uint8_t>& buf);
 
 void _dump(dbg_level lvl, const char* fn, int lineno, const char* bname,
            const void* buf, size_t len);

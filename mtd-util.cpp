@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2017-2022 Intel Corporation
+// Copyright (c) 2017-2025 Intel Corporation
 //
 // This software and the related documents are Intel copyrighted
 // materials, and your use of them is governed by the express license
@@ -101,7 +101,7 @@ int cp_to_file(mtd<deviceClassT>& dev, std::string& filename, size_t start,
     return 0;
 }
 
-void dump_buf(size_t flash_addr, const gsl::span<const uint8_t>& buf)
+void dump_buf(size_t flash_addr, const std::span<const uint8_t>& buf)
 {
     unsigned int i = 0, l;
     std::stringstream hex, ascii;
@@ -112,7 +112,7 @@ void dump_buf(size_t flash_addr, const gsl::span<const uint8_t>& buf)
      *  0000000: 0000 0000 0000 0000 0000 0000 0000 0000  ................
      */
 
-    std::cout << "dumping " << buf.length() << " bytes from " << std::hex
+    std::cout << "dumping " << buf.size() << " bytes from " << std::hex
               << flash_addr << '\n';
     hex << std::hex << std::setfill('0');
     while (cb != buf.end())
@@ -445,7 +445,7 @@ int main(int argc, char* argv[])
         {
             usage();
         }
-        action =  ACTION_SECURE_BOOT_IMAGE_WRITE;
+        action = ACTION_SECURE_BOOT_IMAGE_WRITE;
         optind++;
         filename = argv[optind];
         if ((optind + 1) < argc)

@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2017-2022 Intel Corporation
+// Copyright (c) 2017-2025 Intel Corporation
 //
 // This software and the related documents are Intel copyrighted
 // materials, and your use of them is governed by the express license
@@ -19,7 +19,6 @@
 
 #include <cctype>
 #include <cstdint>
-#include <gsl/span>
 #include <iomanip>
 #include <iostream>
 
@@ -35,7 +34,7 @@ void fw_update_set_dbg_level(dbg_level l)
 }
 
 void _dump(dbg_level lvl, const char* fn, int lineno, const char* bname,
-           const gsl::span<const uint8_t>& buf)
+           const std::span<const uint8_t>& buf)
 {
     unsigned int i = 0, l;
     std::stringstream hex, ascii;
@@ -47,7 +46,7 @@ void _dump(dbg_level lvl, const char* fn, int lineno, const char* bname,
      */
 
     std::cerr << '<' << lvl << '>' << fn << ":" << lineno << ": dumping "
-              << buf.length() << " bytes from " << (void*)buf.data() << " ("
+              << buf.size() << " bytes from " << (void*)buf.data() << " ("
               << bname << ")" << std::endl;
     hex << std::hex << std::setfill('0');
     while (cb != buf.end())
@@ -77,6 +76,6 @@ void _dump(dbg_level lvl, const char* fn, int lineno, const char* bname,
            const void* buf, size_t len)
 {
     const uint8_t* ubuf = (const uint8_t*)buf;
-    const gsl::span<const uint8_t> bspan{ubuf, ubuf + len};
+    const std::span<const uint8_t> bspan{ubuf, ubuf + len};
     _dump(lvl, fn, lineno, bname, bspan);
 }

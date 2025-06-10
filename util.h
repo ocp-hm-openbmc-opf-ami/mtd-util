@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2017-2022 Intel Corporation
+// Copyright (c) 2017-2025 Intel Corporation
 //
 // This software and the related documents are Intel copyrighted
 // materials, and your use of them is governed by the express license
@@ -19,17 +19,16 @@
 #define __UTIL_H__
 
 #include <algorithm>
-#include <gsl/span>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
 
-typedef gsl::span<const uint8_t> cbspan;
+typedef std::span<const uint8_t> cbspan;
 
 #ifndef block_round
 #define block_round(ODD, BLK)                                                  \
-    ((ODD) + (((BLK) - ((ODD) & ((BLK)-1))) & ((BLK)-1)))
+    ((ODD) + (((BLK) - ((ODD) & ((BLK) - 1))) & ((BLK) - 1)))
 #endif
 
 template <class TContainer>
