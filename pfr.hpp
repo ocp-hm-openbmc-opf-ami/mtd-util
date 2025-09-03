@@ -503,7 +503,7 @@ inline bool pfm_layout(uint32_t& pfm_address, uint32_t& pfm_region_size,
 
     for (const auto& [objPath, serviceVec] : subTree)
     {
-        if (!serviceVec.empty() && boost::ends_with(objPath, "Baseboard/PFR"))
+        if (!serviceVec.empty() && boost::ends_with(objPath, "/PFR"))
         {
             serviceName = serviceVec.begin()->first;
             pfrPath = objPath;
