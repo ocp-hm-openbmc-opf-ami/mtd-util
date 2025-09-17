@@ -1225,12 +1225,6 @@ bool pfr_authenticate(const std::string& filename, bool check_root_key)
         return false;
     }
 
-    if (!is_signature_valid(sig, check_root_key))
-    {
-        FWERROR("FVM signature not valid");
-        return false;
-    }
-
     if (sig->b0.pc_type == pfr_pc_type_combined_cpld_update)
     {
         auto offset = reinterpret_cast<const uint8_t*>(file.const_data());
