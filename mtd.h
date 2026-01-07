@@ -41,6 +41,9 @@ class hw_mtd
     int _fd;
 
   public:
+    hw_mtd(const hw_mtd&) = delete;
+    hw_mtd& operator=(const hw_mtd&) = delete;
+
     hw_mtd() : _size(0), _erase_size(0), _is_4k(mtd_use_4k_sectors), _fd(-1)
     {
     }
@@ -77,6 +80,9 @@ class file_mtd_emulation
     int _fd;
 
   public:
+    file_mtd_emulation(const file_mtd_emulation&) = delete;
+    file_mtd_emulation& operator=(const file_mtd_emulation&) = delete;
+
     file_mtd_emulation() : _size(0), _is_4k(mtd_use_4k_sectors), _fd(-1)
     {
     }
@@ -114,6 +120,9 @@ class mtd
 
   public:
     typedef std::shared_ptr<mtd> ptr;
+    mtd(const mtd&) = delete;
+    mtd& operator=(const mtd&) = delete;
+
     mtd();
     ~mtd();
 

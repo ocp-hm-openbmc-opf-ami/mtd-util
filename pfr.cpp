@@ -38,6 +38,9 @@ static unsigned int image_offset(const void* thing)
 class Hash
 {
   public:
+    Hash(const Hash&) = delete;
+    Hash& operator=(const Hash&) = delete;
+
     Hash(const EVP_MD* dgst, const cbspan& expected) :
         ctx{}, hash(EVP_MAX_MD_SIZE), expected(expected)
     {
