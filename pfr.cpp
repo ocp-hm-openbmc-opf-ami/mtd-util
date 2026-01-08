@@ -881,11 +881,6 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
         return false;
     }
 
-    if (pfm_str->plt.platform_type != board_id)
-    {
-        FWERROR("board id not valid");
-        return false;
-    }
 
     offset += pfm_hdr_size;
 
@@ -894,33 +889,11 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
 
     if (cpu_cpld_addr_str->fw_type != CPUfwType)
     {
-        FWERROR("fwType is not CPU");
+        FWERROR("fwType is not HPM");
         return false;
     }
 
     auto CPU_cpld_strt_offset = cpu_cpld_addr_str->img_strt_offset;
-    offset += CPLD_addr_ref_hdr_size;
-
-    auto scm_cpld_addr_str = reinterpret_cast<const cpld_addr_def*>(offset);
-
-    if (scm_cpld_addr_str->fw_type != SCMfwType)
-    {
-        FWERROR("fwType is not SCM");
-        return false;
-    }
-
-    auto SCM_cpld_strt_offset = scm_cpld_addr_str->img_strt_offset;
-    offset += CPLD_addr_ref_hdr_size;
-
-    auto debug_cpld_addr_str = reinterpret_cast<const cpld_addr_def*>(offset);
-
-    if (debug_cpld_addr_str->fw_type != DebugfwType)
-    {
-        FWERROR("fwType is not Debug");
-        return false;
-    }
-
-    auto DBG_cpld_strt_offset = debug_cpld_addr_str->img_strt_offset;
 
     // CPU CPLD signature validation
     offset = reinterpret_cast<const uint8_t*>(base_addr + CPU_cpld_strt_offset);
@@ -929,7 +902,7 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
 
     if (!is_signature_valid(cpu_img_sig, check_root_key))
     {
-        FWERROR("CPU CPLD signature is not valid");
+        FWERROR("HPM CPLD signature is not valid");
         return false;
     }
 
@@ -940,73 +913,13 @@ static bool pfm_cfm_authenticate(const uint8_t* base_addr, bool check_root_key,
 
     if (cpu_cfm_str->magic != cfm_magic)
     {
-        FWERROR("CPU cfm magic is not valid");
+        FWERROR("HPM cfm magic is not valid");
         return false;
     }
 
     if (cpu_cfm_str->fw_type != CPUfwType)
     {
-        FWERROR("fwType is not CPU");
-        return false;
-    }
-
-    // SCM CPLD signature validation
-    offset = reinterpret_cast<const uint8_t*>(base_addr + SCM_cpld_strt_offset);
-    auto scm_img_sig = reinterpret_cast<const b0b1_signature*>(offset);
-
-    if (!is_signature_valid(scm_img_sig, check_root_key))
-    {
-        FWERROR("SCM CPLD signature is not valid");
-        return false;
-    }
-
-    offset += blk0blk1_size;
-
-    // SCM CPLD CFM validation
-    auto scm_cfm_str = reinterpret_cast<const cfm*>(offset);
-
-    if (scm_cfm_str->magic != cfm_magic)
-    {
-        FWERROR("SCM cfm magic is not valid");
-        return false;
-    }
-
-    if (scm_cfm_str->fw_type != SCMfwType)
-    {
-        FWERROR("fwType is not SCM");
-        return false;
-    }
-
-    // Debug CPLD signature validation
-    offset = reinterpret_cast<const uint8_t*>(base_addr + DBG_cpld_strt_offset);
-    auto debug_img_sig = reinterpret_cast<const b0b1_signature*>(offset);
-
-    if (!is_signature_valid(debug_img_sig, check_root_key))
-    {
-        FWERROR("DEBUG CPLD signature is not valid");
-        return false;
-    }
-
-    offset += blk0blk1_size;
-
-    if (offset < base_addr || offset > (base_addr + max_size))
-    {
-        FWERROR("An invalid pointer reference");
-        return false;
-    }
-
-    // Debug CPLD CFM validation
-    auto debug_cfm_str = reinterpret_cast<const cfm*>(offset);
-
-    if (debug_cfm_str->magic != cfm_magic)
-    {
-        FWERROR("Debug cfm magic is not valid");
-        return false;
-    }
-
-    if (debug_cfm_str->fw_type != DebugfwType)
-    {
-        FWERROR("fwType is not Debug");
+        FWERROR("fwType is not HPM");
         return false;
     }
 
