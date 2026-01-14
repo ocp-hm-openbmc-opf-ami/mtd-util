@@ -956,6 +956,7 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
     FWDEBUG("fvm length is 0x" << std::hex << fvm_hdr->length);
     size_t fvm_size = block_round(fvm_hdr->length, fvm_block_size);
     offset += sizeof(*fvm_hdr);
+
     auto fvm_end = reinterpret_cast<const uint8_t*>(fvm_hdr) + fvm_size;
 
     // loop through until we find fvm address structs
@@ -1101,15 +1102,15 @@ static bool fvm_authenticate(const b0b1_signature* img_sig)
             }
             offset += sizeof(*info);
         }
-        else if (*offset == 0)
+        else if (*offset == 0xFF)
         {
-            // check padding to end
+            // check padding to end (spec padding is 0xFF)
             FWDEBUG("parse FVM: padding");
             while (offset < fvm_end)
             {
-                if (*offset != 0)
+                if (*offset != 0xFF)
                 {
-                    FWERROR("Invalid non-zero padding at "
+                    FWERROR("Invalid non-0xFF padding at "
                             << std::hex << (offset - map_base));
                     return false;
                 }
